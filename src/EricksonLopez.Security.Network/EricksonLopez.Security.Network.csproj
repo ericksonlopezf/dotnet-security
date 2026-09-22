@@ -1,0 +1,23 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.Network</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.Network</RootNamespace>
+    <PackageId>EricksonLopez.Security.Network</PackageId>
+    <Description>Enterprise-grade Server-Side Request Forgery (SSRF) prevention and safe HTTP client handlers for .NET. Protects against RFC 1918 private IPs, loopbacks, link-local, cloud metadata endpoints, and DNS rebinding attacks.</Description>
+    <PackageTags>$(CommonPackageTags);ssrf;dns-rebinding;cloud-metadata;httpclient;safe-http-client;network-security;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.Network.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,24 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.WebAuthn.Fido2.csproj",
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "concurrency": 2,
+    "mutate": [
+      "**/*.cs",
+      "!**/bin/**",
+      "!**/obj/**"
+    ],
+    "ignore-mutations": [],
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*Log*"
+    ]
+  }
+}

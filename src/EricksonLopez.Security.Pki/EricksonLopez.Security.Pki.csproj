@@ -1,0 +1,24 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.Pki</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.Pki</RootNamespace>
+    <PackageId>EricksonLopez.Security.Pki</PackageId>
+    <Description>Public Key Infrastructure (PKI) certificate validation engine for .NET. Supports CRL caching, OCSP validation, custom trust anchors, and certificate chain verification with Native AOT compatibility.</Description>
+    <PackageTags>$(CommonPackageTags);pki;x509;certificates;certificate-validation;crl;ocsp;trust-anchors;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.Pki.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

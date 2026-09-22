@@ -1,0 +1,31 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.WebAuthn.Fido2</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.WebAuthn.Fido2</RootNamespace>
+    <PackageId>EricksonLopez.Security.WebAuthn.Fido2</PackageId>
+    <Description>Enterprise-grade W3C WebAuthn Level 2/3 and FIDO2 passkey engine with CBOR/COSE parsing, attestation/assertion verification, replay protection, and zero-allocation cryptographic checks with 100% Native AOT compatibility.</Description>
+    <PackageTags>$(CommonPackageTags);webauthn;fido2;passkeys;passwordless;authentication;attestation;assertion;cbor;cose;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="System.Formats.Cbor" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.WebAuthn.Fido2.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

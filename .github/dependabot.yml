@@ -1,0 +1,27 @@
+# Copyright © Erickson Lopez. MIT License.
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      microsoft-dependencies:
+        patterns:
+          - "Microsoft.*"
+          - "System.*"
+      testing-dependencies:
+        patterns:
+          - "xunit*"
+          - "AwesomeAssertions*"
+          - "NSubstitute*"
+          - "coverlet.*"
+          - "BenchmarkDotNet*"
+      ericksonlopez-ecosystem:
+        patterns:
+          - "EricksonLopez.*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
