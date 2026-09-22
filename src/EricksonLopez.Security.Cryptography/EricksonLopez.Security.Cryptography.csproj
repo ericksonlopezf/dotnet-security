@@ -1,0 +1,22 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Core cryptography primitives for EricksonLopez.Security ecosystem, providing Native AOT-compatible and zero-allocation implementations using built-in System.Security.Cryptography APIs.</Description>
+    <PackageTags>$(CommonPackageTags);cryptography;encryption;aead;aes-gcm;pbkdf2;constant-time;randomness;native-aot</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.Cryptography.Tests" />
+  </ItemGroup>
+
+</Project>
+

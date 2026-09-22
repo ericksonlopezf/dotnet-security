@@ -1,0 +1,148 @@
+# Copyright © Erickson Lopez. MIT License.
+# Top-most EditorConfig file
+root = true
+
+# All files
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+end_of_line = lf
+
+# Markdown files
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# XML / Props / Targets / Project files
+[*.{csproj,props,targets,xml,slnx}]
+indent_size = 2
+
+# C# Code
+[*.cs]
+indent_size = 4
+
+# C# Language Rules
+csharp_style_namespace_declarations = file_scoped:error
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
+csharp_style_pattern_matching_over_as_with_null_check = true:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+
+# Naming Conventions (IDE1006)
+dotnet_diagnostic.IDE1006.severity = warning
+
+# Interfaces must start with 'I'
+dotnet_naming_rule.interface_should_be_prefixed_with_i.symbols = interface_symbols
+dotnet_naming_rule.interface_should_be_prefixed_with_i.style = prefix_with_i
+dotnet_naming_rule.interface_should_be_prefixed_with_i.severity = warning
+
+dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
+dotnet_naming_symbols.interface_symbols.applicable_accessibilities = *
+dotnet_naming_style.prefix_with_i.required_prefix = I
+dotnet_naming_style.prefix_with_i.capitalization = pascal_case
+
+# Type parameters must start with 'T'
+dotnet_naming_rule.type_parameter_should_be_prefixed_with_t.symbols = type_parameter_symbols
+dotnet_naming_rule.type_parameter_should_be_prefixed_with_t.style = prefix_with_t
+dotnet_naming_rule.type_parameter_should_be_prefixed_with_t.severity = warning
+
+dotnet_naming_symbols.type_parameter_symbols.applicable_kinds = type_parameter
+dotnet_naming_symbols.type_parameter_symbols.applicable_accessibilities = *
+dotnet_naming_style.prefix_with_t.required_prefix = T
+dotnet_naming_style.prefix_with_t.capitalization = pascal_case
+
+# Private and internal instance fields must start with '_'
+dotnet_naming_rule.instance_fields_should_be_camel_case_with_underscore.symbols = instance_field_symbols
+dotnet_naming_rule.instance_fields_should_be_camel_case_with_underscore.style = camel_case_with_underscore
+dotnet_naming_rule.instance_fields_should_be_camel_case_with_underscore.severity = warning
+
+dotnet_naming_symbols.instance_field_symbols.applicable_kinds = field
+dotnet_naming_symbols.instance_field_symbols.applicable_accessibilities = private, internal, private_protected
+dotnet_naming_symbols.instance_field_symbols.applicable_modifiers = !static, !const
+dotnet_naming_style.camel_case_with_underscore.required_prefix = _
+dotnet_naming_style.camel_case_with_underscore.capitalization = camel_case
+
+# Constants must be PascalCase
+dotnet_naming_rule.constants_should_be_pascal_case.symbols = constant_symbols
+dotnet_naming_rule.constants_should_be_pascal_case.style = pascal_case
+dotnet_naming_rule.constants_should_be_pascal_case.severity = warning
+
+dotnet_naming_symbols.constant_symbols.applicable_kinds = field
+dotnet_naming_symbols.constant_symbols.applicable_modifiers = const
+
+# Types, Methods, Properties, Events must be PascalCase
+dotnet_naming_rule.types_should_be_pascal_case.symbols = types_and_members
+dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case
+dotnet_naming_rule.types_should_be_pascal_case.severity = warning
+
+dotnet_naming_symbols.types_and_members.applicable_kinds = class, struct, enum, property, method, event, delegate
+dotnet_naming_symbols.types_and_members.applicable_accessibilities = *
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# Parameters and local variables must be camelCase
+dotnet_naming_rule.parameters_and_locals_should_be_camel_case.symbols = params_and_locals
+dotnet_naming_rule.parameters_and_locals_should_be_camel_case.style = camel_case
+dotnet_naming_rule.parameters_and_locals_should_be_camel_case.severity = warning
+
+dotnet_naming_symbols.params_and_locals.applicable_kinds = parameter, local
+dotnet_naming_symbols.params_and_locals.applicable_accessibilities = *
+dotnet_naming_style.camel_case.capitalization = camel_case
+
+# Analyzers and Diagnostics Severity Enforcement
+dotnet_diagnostic.CS1591.severity = error
+dotnet_diagnostic.CS0618.severity = error
+dotnet_diagnostic.CS0619.severity = error
+dotnet_diagnostic.CA1707.severity = warning
+dotnet_diagnostic.CA1852.severity = warning
+dotnet_diagnostic.CA1305.severity = warning
+dotnet_diagnostic.xUnit1051.severity = warning
+dotnet_diagnostic.CA1848.severity = suggestion
+dotnet_diagnostic.CA1873.severity = suggestion
+
+# PKCS#11 Native Interop C Standards Scoped Overrides
+[src/**/Interop/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1051.severity = none
+dotnet_diagnostic.IDE1006.severity = none
+
+# Test Projects Scoped Overrides
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = suggestion
+dotnet_diagnostic.CS1591.severity = none
+dotnet_diagnostic.CA1852.severity = suggestion
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.IL3000.severity = none
+dotnet_diagnostic.IDE1006.severity = none
+dotnet_diagnostic.IDE0065.severity = none
+
+# Analyzers Project Scoped Overrides
+[src/**/Analyzers/**/*.cs]
+dotnet_diagnostic.RS2008.severity = none
+dotnet_diagnostic.RS1032.severity = none
+
+# Benchmarks Scoped Overrides
+[benchmarks/**/*.cs]
+dotnet_diagnostic.CA1707.severity = suggestion
+dotnet_diagnostic.CS1591.severity = none
+dotnet_diagnostic.CA1852.severity = suggestion
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.IDE1006.severity = none
+dotnet_diagnostic.IDE0065.severity = none
+
+# Samples Scoped Overrides
+[samples/**/*.cs]
+dotnet_diagnostic.CA1707.severity = suggestion
+dotnet_diagnostic.CS1591.severity = none
+dotnet_diagnostic.CA1852.severity = suggestion
+dotnet_diagnostic.CA1305.severity = suggestion
+dotnet_diagnostic.CA1859.severity = suggestion
+dotnet_diagnostic.IDE1006.severity = none
+dotnet_diagnostic.IDE0065.severity = none

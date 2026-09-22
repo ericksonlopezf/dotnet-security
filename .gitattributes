@@ -1,0 +1,11 @@
+* text=auto eol=lf
+*.cs text diff=csharp
+*.sln text eol=crlf
+*.slnx text eol=lf
+*.props text
+*.targets text
+*.xml text
+*.json text
+*.md text
+*.png binary
+*.snk binary

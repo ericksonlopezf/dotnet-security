@@ -1,0 +1,142 @@
+// Copyright © Erickson Lopez. MIT License.
+
+namespace EricksonLopez.Security.Abstractions.Tests;
+
+using System;
+using EricksonLopez.Security.Abstractions.Cryptography;
+using EricksonLopez.Security.Abstractions.Passwords;
+using EricksonLopez.Security.Abstractions.Primitives;
+using Xunit;
+
+public sealed class CryptographyAndPasswordModelTests
+{
+    // ==========================================
+    // AeadAlgorithm Enum Tests
+    // ==========================================
+
+    [Fact]
+    public void AeadAlgorithm_EnumValues_MatchExpectedIntegers()
+    {
+        Assert.Equal(1, (int)AeadAlgorithm.Aes256Gcm);
+        Assert.Equal(2, (int)AeadAlgorithm.ChaCha20Poly1305);
+        Assert.Equal(99, (int)(AeadAlgorithm)99);
+    }
+
+    // ==========================================
+    // EncryptedData Struct Tests
+    // ==========================================
+
+    [Fact]
+    public void EncryptedData_Properties_ReturnExactLengths()
+    {
+        ReadOnlyMemory<byte> ciphertext = new byte[] { 1, 2, 3, 4, 5 };
+        ReadOnlyMemory<byte> tag = new byte[] { 10, 20, 30 };
+        ReadOnlyMemory<byte> nonce = new byte[] { 100, 200 };
+
+        var encrypted = new EncryptedData(ciphertext, tag, nonce);
+
+        Assert.Equal(5, encrypted.CiphertextLength);
+        Assert.Equal(3, encrypted.TagLength);
+        Assert.Equal(2, encrypted.NonceLength);
+        Assert.True(encrypted.Ciphertext.Span.SequenceEqual(ciphertext.Span));
+        Assert.True(encrypted.Tag.Span.SequenceEqual(tag.Span));
+        Assert.True(encrypted.Nonce.Span.SequenceEqual(nonce.Span));
+    }
+
+    // ==========================================
+    // SecurityEnvelope Record Tests
+    // ==========================================
+
+    [Fact]
+    public void SecurityEnvelope_PropertiesAndHasAssociatedData_WorkCorrectly()
+    {
+        var keyId = KeyIdentifier.New();
+        var keyVersion = KeyVersion.Initial;
+        ReadOnlyMemory<byte> nonce = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+        ReadOnlyMemory<byte> tag = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+        ReadOnlyMemory<byte> ciphertext = new byte[] { 10, 20, 30, 40, 50 };
+        ReadOnlyMemory<byte> aad = new byte[] { 99, 88, 77 };
+
+        var envelopeWithAad = new SecurityEnvelope(
+            FormatVersion: SecurityEnvelope.CurrentFormatVersion,
+            Algorithm: AeadAlgorithm.Aes256Gcm,
+            KeyId: keyId,
+            KeyVersion: keyVersion,
+            Nonce: nonce,
+            Tag: tag,
+            Ciphertext: ciphertext,
+            AssociatedData: aad);
+
+        Assert.Equal(SecurityEnvelope.CurrentFormatVersion, envelopeWithAad.FormatVersion);
+        Assert.Equal(AeadAlgorithm.Aes256Gcm, envelopeWithAad.Algorithm);
+        Assert.Equal(keyId, envelopeWithAad.KeyId);
+        Assert.Equal(keyVersion, envelopeWithAad.KeyVersion);
+        Assert.Equal(5, envelopeWithAad.CiphertextLength);
+        Assert.True(envelopeWithAad.HasAssociatedData);
+
+        var envelopeWithoutAad = new SecurityEnvelope(
+            FormatVersion: 1,
+            Algorithm: AeadAlgorithm.ChaCha20Poly1305,
+            KeyId: keyId,
+            KeyVersion: keyVersion,
+            Nonce: nonce,
+            Tag: tag,
+            Ciphertext: ciphertext);
+
+        Assert.Equal(5, envelopeWithoutAad.CiphertextLength);
+        Assert.False(envelopeWithoutAad.HasAssociatedData);
+        Assert.True(envelopeWithoutAad.AssociatedData.IsEmpty);
+
+        var cloned = envelopeWithAad with { Algorithm = (AeadAlgorithm)99 };
+        Assert.Equal((AeadAlgorithm)99, cloned.Algorithm);
+        Assert.NotEqual(envelopeWithAad, cloned);
+        Assert.True(envelopeWithAad != cloned);
+        Assert.False(envelopeWithAad == cloned);
+        Assert.NotNull(envelopeWithAad.ToString());
+    }
+
+    // ==========================================
+    // PasswordHash Struct Tests
+    // ==========================================
+
+    [Fact]
+    public void PasswordHash_ConstructorsAndConversions_WorkCorrectly()
+    {
+        var rawHash = "$argon2id$v=19$m=65536,t=3,p=4$someSalt$someHash";
+        var hash1 = new PasswordHash(rawHash);
+        PasswordHash hash2 = "  " + rawHash + "  ";
+        PasswordHash def = default;
+
+        Assert.Equal(rawHash, hash1.Value);
+        Assert.Equal(rawHash, hash2.Value);
+        Assert.Equal(rawHash, (string)hash1);
+        Assert.Equal("[REDACTED PASSWORD HASH]", hash1.ToString());
+        Assert.Equal(string.Empty, def.Value);
+
+        var exEmpty = Assert.Throws<ArgumentException>(() => new PasswordHash(""));
+        Assert.Contains("Password hash string cannot be null, empty, or whitespace.", exEmpty.Message);
+        Assert.Equal("value", exEmpty.ParamName);
+
+        Assert.Throws<ArgumentException>(() => new PasswordHash("   "));
+        Assert.Throws<ArgumentException>(() => new PasswordHash(null!));
+    }
+
+    // ==========================================
+    // Password Hash Algorithms & Verification Enums
+    // ==========================================
+
+    [Fact]
+    public void PasswordHashAlgorithm_EnumValues_MatchExpectedIntegers()
+    {
+        Assert.Equal(1, (int)PasswordHashAlgorithm.Pbkdf2HmacSha512);
+        Assert.Equal(2, (int)PasswordHashAlgorithm.Argon2id);
+    }
+
+    [Fact]
+    public void PasswordVerificationResult_EnumValues_MatchExpectedIntegers()
+    {
+        Assert.Equal(1, (int)PasswordVerificationResult.Success);
+        Assert.Equal(2, (int)PasswordVerificationResult.SuccessRehashNeeded);
+        Assert.Equal(3, (int)PasswordVerificationResult.Failed);
+    }
+}

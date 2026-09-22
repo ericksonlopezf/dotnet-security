@@ -1,0 +1,27 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Cryptography.csproj",
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*ArrayPool*",
+      "*Rent*",
+      "*Return*"
+    ],
+    "ignore-mutations": [],
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "concurrency": 2
+  }
+}

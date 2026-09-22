@@ -1,0 +1,33 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Cryptography.Pkcs11.csproj",
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "concurrency": 2,
+    "mutate": [
+      "**/*",
+      "!**/bin/**",
+      "!**/obj/**"
+    ],
+    "ignore-mutations": [
+      "initializer"
+    ],
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*Log*",
+      "ConfigureAwait"
+    ]
+  }
+}

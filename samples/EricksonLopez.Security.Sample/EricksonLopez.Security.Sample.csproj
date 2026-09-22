@@ -1,0 +1,48 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>EricksonLopez.Security.Sample</RootNamespace>
+    <AssemblyName>EricksonLopez.Security.Sample</AssemblyName>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Api" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.AspNetCore\EricksonLopez.Security.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography\EricksonLopez.Security.Cryptography.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography.XmlDSig\EricksonLopez.Security.Cryptography.XmlDSig.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography.Pkcs11\EricksonLopez.Security.Cryptography.Pkcs11.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Mfa\EricksonLopez.Security.Mfa.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Network\EricksonLopez.Security.Network.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Pki\EricksonLopez.Security.Pki.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Privacy.Hibp\EricksonLopez.Security.Privacy.Hibp.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.ZeroTrust\EricksonLopez.Security.ZeroTrust.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.WebAuthn.Fido2\EricksonLopez.Security.WebAuthn.Fido2.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.WebAuthn.Fido2.Mds3\EricksonLopez.Security.WebAuthn.Fido2.Mds3.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Saml2\EricksonLopez.Security.Saml2.csproj" />
+
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.OpenTelemetry\EricksonLopez.Security.OpenTelemetry.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Azure\EricksonLopez.Security.Azure.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Aws\EricksonLopez.Security.Aws.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.HashiCorpVault\EricksonLopez.Security.HashiCorpVault.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.GoogleCloud\EricksonLopez.Security.GoogleCloud.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Testing\EricksonLopez.Security.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

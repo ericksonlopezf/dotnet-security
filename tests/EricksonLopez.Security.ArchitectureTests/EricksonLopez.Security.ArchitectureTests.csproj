@@ -1,0 +1,46 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>NetArchTest architecture rules and boundary enforcement tests for EricksonLopez.Security.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.AspNetCore\EricksonLopez.Security.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Testing\EricksonLopez.Security.Testing.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography\EricksonLopez.Security.Cryptography.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Mfa\EricksonLopez.Security.Mfa.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.ZeroTrust\EricksonLopez.Security.ZeroTrust.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Pki\EricksonLopez.Security.Pki.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Network\EricksonLopez.Security.Network.csproj" />
+
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Saml2\EricksonLopez.Security.Saml2.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.WebAuthn.Fido2\EricksonLopez.Security.WebAuthn.Fido2.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.WebAuthn.Fido2.Mds3\EricksonLopez.Security.WebAuthn.Fido2.Mds3.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography.XmlDSig\EricksonLopez.Security.Cryptography.XmlDSig.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Cryptography.Pkcs11\EricksonLopez.Security.Cryptography.Pkcs11.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Privacy.Hibp\EricksonLopez.Security.Privacy.Hibp.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.OpenTelemetry\EricksonLopez.Security.OpenTelemetry.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="NetArchTest.Rules" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="coverlet.collector">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

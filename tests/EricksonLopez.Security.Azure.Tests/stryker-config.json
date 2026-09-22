@@ -1,0 +1,31 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Azure.csproj",
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "concurrency": 2,
+    "mutate": [
+      "**/*",
+      "!**/bin/**",
+      "!**/obj/**"
+    ],
+    "ignore-mutations": [],
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*Log*",
+      "ConfigureAwait"
+    ]
+  }
+}

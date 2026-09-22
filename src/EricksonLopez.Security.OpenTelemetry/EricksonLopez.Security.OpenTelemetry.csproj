@@ -1,0 +1,20 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Optional OpenTelemetry instrumentation satellite for EricksonLopez.Security. Provides automatic ActivitySource registration, metrics (Meter), and semantic conventions for encrypt/decrypt, password hashing, key lifecycle, and API key validation operations.</Description>
+    <PackageTags>$(CommonPackageTags);opentelemetry;otel;tracing;metrics;observability;diagnostics</PackageTags>
+    <!-- This satellite has OTel SDK dependency — intentionally NOT in core per ADR-019 -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Api" />
+  </ItemGroup>
+
+</Project>

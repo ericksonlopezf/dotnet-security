@@ -1,0 +1,13 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Core security abstractions, cryptographic ports, key lifecycle contracts, password hashing interfaces, token primitives, and secure error models for the EricksonLopez.Security ecosystem.</Description>
+    <PackageTags>$(CommonPackageTags);abstractions;contracts;interfaces;primitives;cryptography;native-aot</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+  </ItemGroup>
+
+</Project>
