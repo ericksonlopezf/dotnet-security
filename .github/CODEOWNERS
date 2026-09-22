@@ -1,0 +1,20 @@
+# Global owner for the entire repository
+* @ericksonlopezf
+
+# Documentation
+/docs/ @ericksonlopezf
+/*.md @ericksonlopezf
+
+# Build & Dependencies
+/Directory.Build.props @ericksonlopezf
+/Directory.Build.targets @ericksonlopezf
+/Directory.Packages.props @ericksonlopezf
+/EricksonLopez.Security.slnx @ericksonlopezf
+
+# Source Code
+/src/ @ericksonlopezf
+
+# Tests & Benchmarks
+/tests/ @ericksonlopezf
+/benchmarks/ @ericksonlopezf
+/samples/ @ericksonlopezf

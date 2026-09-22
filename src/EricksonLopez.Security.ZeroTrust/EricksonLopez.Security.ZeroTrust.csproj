@@ -1,0 +1,23 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.ZeroTrust</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.ZeroTrust</RootNamespace>
+    <PackageId>EricksonLopez.Security.ZeroTrust</PackageId>
+    <Description>Enterprise-grade Zero-Trust Attribute-Based Access Control (ABAC) policy evaluation engine for .NET. High-throughput in-memory evaluation, hierarchical combining algorithms (Deny-Overrides, Permit-Overrides), and Native AOT support.</Description>
+    <PackageTags>$(CommonPackageTags);zero-trust;abac;authorization;access-control;rbac;policy-engine;xacml;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.ZeroTrust.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

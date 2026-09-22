@@ -1,0 +1,21 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Testing.csproj",
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "ignore-methods": [
+      "ConfigureAwait"
+    ],
+    "ignore-mutations": [],
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "concurrency": 2
+  }
+}

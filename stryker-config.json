@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/src/Stryker.Core/Stryker.Core/StrykerConfig.schema.json",
+  "stryker-config": {
+    "project": "src/EricksonLopez.Security/EricksonLopez.Security.csproj",
+    "test-projects": [
+      "tests/EricksonLopez.Security.Tests/EricksonLopez.Security.Tests.csproj"
+    ],
+    "target-framework": "net10.0",
+    "concurrency": 2,
+    "mutate": [
+      "**/*.cs",
+      "!bin/**",
+      "!obj/**",
+      "!**/*.g.cs"
+    ],
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "ignore-methods": [
+      "ConfigureAwait",
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter<*>.Add*",
+      "*ArrayPool*",
+      "*Rent*",
+      "*Return*"
+    ],
+    "ignore-mutations": [],
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ]
+  }
+}

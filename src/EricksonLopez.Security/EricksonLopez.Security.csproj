@@ -1,0 +1,28 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security</AssemblyName>
+    <RootNamespace>EricksonLopez.Security</RootNamespace>
+    <PackageId>EricksonLopez.Security</PackageId>
+    <Description>Enterprise-grade security engine, AEAD authenticated encryption (AES-GCM), multi-version key management, PBKDF2/Argon2 password security, token hashing, and secrets protection for the EricksonLopez.Security framework.</Description>
+    <PackageTags>$(CommonPackageTags);encryption;aead;aes-gcm;chacha20-poly1305;key-management;keyring;password-hashing;argon2;pbkdf2;tokens;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,24 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.Mfa</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.Mfa</RootNamespace>
+    <PackageId>EricksonLopez.Security.Mfa</PackageId>
+    <Description>Enterprise-grade Multi-Factor Authentication (MFA) engine implementing RFC 6238 TOTP, RFC 4226 HOTP, Base32 encoding, authenticator URI generation, and emergency recovery codes with 100% Native AOT compatibility.</Description>
+    <PackageTags>$(CommonPackageTags);mfa;2fa;two-factor;totp;hotp;authenticator;recovery-codes;base32;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EricksonLopez.Security.Mfa.Tests" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+</Project>

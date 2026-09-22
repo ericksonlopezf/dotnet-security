@@ -1,0 +1,26 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.Testing</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.Testing</RootNamespace>
+    <PackageId>EricksonLopez.Security.Testing</PackageId>
+    <Description>Testing utilities, deterministic cryptographic doubles, fake key stores, and test assertions for EricksonLopez.Security.</Description>
+    <PackageTags>$(CommonPackageTags);testing;test-doubles;fakes;mocks;assertions;cryptography-testing</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+    <ProjectReference Include="..\EricksonLopez.Security.WebAuthn.Fido2\EricksonLopez.Security.WebAuthn.Fido2.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="System.Formats.Cbor" />
+  </ItemGroup>
+
+</Project>
