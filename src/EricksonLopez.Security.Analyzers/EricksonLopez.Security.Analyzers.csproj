@@ -1,0 +1,46 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <WarningLevel>5</WarningLevel>
+
+    <Description>Roslyn diagnostic analyzers for EricksonLopez.Security. Catches common security misuse patterns at compile time: non-constant-time token comparison, undisposed SecretBuffer, insecure algorithm selection, and more.</Description>
+    <PackageTags>$(CommonPackageTags);roslyn;analyzer;analyzers;diagnostics;static-analysis;code-analysis</PackageTags>
+    <PackageId>EricksonLopez.Security.Analyzers</PackageId>
+    <IsPackable>true</IsPackable>
+
+    <!-- Analyzers are not executable assemblies -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+
+    <!-- Required for Roslyn analyzers -->
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Release tracking files required by RS2008 -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <!-- Package the analyzer DLL in the correct location for NuGet to pick it up -->
+  <ItemGroup>
+    <None Include="bin\$(Configuration)\netstandard2.0\$(AssemblyName).dll" Pack="true"
+          PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.GoogleCloud</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.GoogleCloud</RootNamespace>
+    <PackageId>EricksonLopez.Security.GoogleCloud</PackageId>
+    <Description>Google Cloud KMS (including Cloud HSM) and Secret Manager key store and secret store adapters for EricksonLopez.Security.</Description>
+    <PackageTags>$(CommonPackageTags);google-cloud;gcp;kms;cloud-kms;secret-manager;cloud-hsm;key-management;secrets-management;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Cloud.Kms.V1" />
+    <PackageReference Include="Google.Cloud.SecretManager.V1" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

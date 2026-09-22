@@ -1,0 +1,18 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <AssemblyName>EricksonLopez.Security.Abstractions</AssemblyName>
+    <RootNamespace>EricksonLopez.Security.Abstractions</RootNamespace>
+    <PackageId>EricksonLopez.Security.Abstractions</PackageId>
+    <Description>Core security abstractions, cryptographic ports, key lifecycle contracts, password hashing interfaces, token primitives, and secure error models for the EricksonLopez.Security ecosystem.</Description>
+    <PackageTags>$(CommonPackageTags);abstractions;contracts;interfaces;primitives;cryptography;native-aot</PackageTags>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EricksonLopez.Result" />
+  </ItemGroup>
+
+</Project>

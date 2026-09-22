@@ -1,0 +1,60 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EricksonLopez.Security.Abstractions/EricksonLopez.Security.Abstractions.csproj" />
+    <Project Path="src/EricksonLopez.Security/EricksonLopez.Security.csproj" />
+    <Project Path="src/EricksonLopez.Security.AspNetCore/EricksonLopez.Security.AspNetCore.csproj" />
+    <Project Path="src/EricksonLopez.Security.Cryptography/EricksonLopez.Security.Cryptography.csproj" />
+    <Project Path="src/EricksonLopez.Security.Network/EricksonLopez.Security.Network.csproj" />
+    <Project Path="src/EricksonLopez.Security.Cryptography.Pkcs11/EricksonLopez.Security.Cryptography.Pkcs11.csproj" />
+    <Project Path="src/EricksonLopez.Security.Cryptography.XmlDSig/EricksonLopez.Security.Cryptography.XmlDSig.csproj" />
+    <Project Path="src/EricksonLopez.Security.ZeroTrust/EricksonLopez.Security.ZeroTrust.csproj" />
+    <Project Path="src/EricksonLopez.Security.Mfa/EricksonLopez.Security.Mfa.csproj" />
+    <Project Path="src/EricksonLopez.Security.Pki/EricksonLopez.Security.Pki.csproj" />
+    <Project Path="src/EricksonLopez.Security.WebAuthn.Fido2/EricksonLopez.Security.WebAuthn.Fido2.csproj" />
+    <Project Path="src/EricksonLopez.Security.Saml2/EricksonLopez.Security.Saml2.csproj" />
+    <Project Path="src/EricksonLopez.Security.Privacy.Hibp/EricksonLopez.Security.Privacy.Hibp.csproj" />
+    <Project Path="src/EricksonLopez.Security.Testing/EricksonLopez.Security.Testing.csproj" />
+    <Project Path="src/EricksonLopez.Security.OpenTelemetry/EricksonLopez.Security.OpenTelemetry.csproj" />
+    <Project Path="src/EricksonLopez.Security.WebAuthn.Fido2.Mds3/EricksonLopez.Security.WebAuthn.Fido2.Mds3.csproj" />
+    <Project Path="src/EricksonLopez.Security.Analyzers/EricksonLopez.Security.Analyzers.csproj" />
+    <Project Path="src/EricksonLopez.Security.Azure/EricksonLopez.Security.Azure.csproj" />
+    <Project Path="src/EricksonLopez.Security.Aws/EricksonLopez.Security.Aws.csproj" />
+    <Project Path="src/EricksonLopez.Security.HashiCorpVault/EricksonLopez.Security.HashiCorpVault.csproj" />
+    <Project Path="src/EricksonLopez.Security.GoogleCloud/EricksonLopez.Security.GoogleCloud.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EricksonLopez.Security.Abstractions.Tests/EricksonLopez.Security.Abstractions.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Tests/EricksonLopez.Security.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Network.Tests/EricksonLopez.Security.Network.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Cryptography.Pkcs11.Tests/EricksonLopez.Security.Cryptography.Pkcs11.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Cryptography.Tests/EricksonLopez.Security.Cryptography.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Cryptography.XmlDSig.Tests/EricksonLopez.Security.Cryptography.XmlDSig.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.ZeroTrust.Tests/EricksonLopez.Security.ZeroTrust.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Mfa.Tests/EricksonLopez.Security.Mfa.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Pki.Tests/EricksonLopez.Security.Pki.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.WebAuthn.Fido2.Mds3.Tests/EricksonLopez.Security.WebAuthn.Fido2.Mds3.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.WebAuthn.Fido2.Tests/EricksonLopez.Security.WebAuthn.Fido2.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Saml2.Tests/EricksonLopez.Security.Saml2.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Privacy.Hibp.Tests/EricksonLopez.Security.Privacy.Hibp.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.AspNetCore.Tests/EricksonLopez.Security.AspNetCore.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.OpenTelemetry.Tests/EricksonLopez.Security.OpenTelemetry.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Analyzers.Tests/EricksonLopez.Security.Analyzers.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Testing.Tests/EricksonLopez.Security.Testing.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.ArchitectureTests/EricksonLopez.Security.ArchitectureTests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.AotSmokeTest/EricksonLopez.Security.AotSmokeTest.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Azure.Tests/EricksonLopez.Security.Azure.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.Aws.Tests/EricksonLopez.Security.Aws.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.HashiCorpVault.Tests/EricksonLopez.Security.HashiCorpVault.Tests.csproj" />
+    <Project Path="tests/EricksonLopez.Security.GoogleCloud.Tests/EricksonLopez.Security.GoogleCloud.Tests.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/EricksonLopez.Security.Benchmarks/EricksonLopez.Security.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/EricksonLopez.Security.Sample/EricksonLopez.Security.Sample.csproj" />
+    <Project Path="samples/EricksonLopez.Security.ApiKeys.Sample/EricksonLopez.Security.ApiKeys.Sample.csproj" />
+    <Project Path="samples/EricksonLopez.Security.Totp.Sample/EricksonLopez.Security.Totp.Sample.csproj" />
+    <Project Path="samples/EricksonLopez.Security.Secrets.Sample/EricksonLopez.Security.Secrets.Sample.csproj" />
+  </Folder>
+</Solution>

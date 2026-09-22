@@ -1,0 +1,27 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Saml2.csproj",
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*Log*"
+    ],
+    "ignore-mutations": [
+      "initializer"
+    ],
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "concurrency": 2
+  }
+}
