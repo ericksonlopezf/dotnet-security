@@ -1,0 +1,26 @@
+{
+  "stryker-config": {
+    "project": "EricksonLopez.Security.Privacy.Hibp.csproj",
+    "thresholds": {
+      "high": 100,
+      "low": 98,
+      "break": 95
+    },
+    "ignore-methods": [
+      "*SetTag*",
+      "*SetStatus*",
+      "*Record*",
+      "*Counter*.Add*",
+      "*Log*",
+      "ConfigureAwait"
+    ],
+    "ignore-mutations": [],
+    "reporters": [
+      "Progress",
+      "ClearText",
+      "Html",
+      "Json"
+    ],
+    "concurrency": 2
+  }
+}

@@ -1,0 +1,93 @@
+# Copyright © Erickson Lopez. MIT License.
+
+## ----------------------------------------------------------------------------
+## Build & Compilation Artifacts
+## ----------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Aa]ot-output/
+Generated_Files/
+*.log
+*.binlog
+
+# NuGet Packages directory (Central Package Management lock files must NOT be ignored)
+packages/
+!**/packages.lock.json
+
+## ----------------------------------------------------------------------------
+## Test, Coverage & Quality Reports
+## ----------------------------------------------------------------------------
+[Tt]est[Rr]esult*/
+[Cc]overage[Rr]eport*/
+[Ss]tryker[Oo]utput/
+*.opencover.xml
+*.cobertura.xml
+*.coverage
+*.coveragexml
+
+## ----------------------------------------------------------------------------
+## Benchmarks & Performance
+## ----------------------------------------------------------------------------
+BenchmarkDotNet.Artifacts/
+benchmarks/pr-results/
+!benchmarks/results/baseline.json
+
+## ----------------------------------------------------------------------------
+## IDE & Editor Artifacts
+## ----------------------------------------------------------------------------
+# Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# JetBrains Rider & ReSharper
+.idea/
+*.DotSettings.user
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+.ionide/
+
+## ----------------------------------------------------------------------------
+## Operating System Files
+## ----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+[Tt]humbs.db
+desktop.ini
+
+## ----------------------------------------------------------------------------
+## Security — Strong Name Key (SC-009)
+## ----------------------------------------------------------------------------
+# The private key must NEVER be committed to the repository.
+# Store it in CI secrets (e.g., STRONG_NAME_KEY_BASE64 in GitHub Actions Secrets).
+# The public key is baked into Directory.Build.props; signing is conditional on Exists().
+EricksonLopez.snk
+
+## ----------------------------------------------------------------------------
+## Secrets & Local Environment Overrides
+## ----------------------------------------------------------------------------
+*.env
+*.env.*
+!*.env.example
+appsettings.local.json
+appsettings.*.local.json
+secrets.json
+
+## ----------------------------------------------------------------------------
+## Internal Audits & Scratch Workspaces
+## ----------------------------------------------------------------------------
+MEGA-AUDITORIA/
+scratch/

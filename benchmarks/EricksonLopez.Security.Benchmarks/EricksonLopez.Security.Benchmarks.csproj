@@ -1,0 +1,24 @@
+<!-- Copyright © Erickson Lopez. MIT License. -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- BENCH-001 (resolved): multi-target allows BenchmarkDotNet harness to build on net8+net9+net10 -->
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>EricksonLopez.Security.Benchmarks</RootNamespace>
+    <AssemblyName>EricksonLopez.Security.Benchmarks</AssemblyName>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\EricksonLopez.Security.Abstractions\EricksonLopez.Security.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\EricksonLopez.Security\EricksonLopez.Security.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>
