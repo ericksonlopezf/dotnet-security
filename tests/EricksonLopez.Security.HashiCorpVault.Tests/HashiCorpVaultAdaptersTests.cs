@@ -888,6 +888,9 @@ public sealed class HashiCorpVaultAdaptersTests
         clientUnowned.Dispose();
         clientUnowned.Dispose(); // idempotent
 
+        var act = () => unownedHttp.CancelPendingRequests();
+        act.Should().NotThrow();
+
         await Assert.ThrowsAsync<ObjectDisposedException>(() => clientUnowned.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
 
         // Owned HttpClient
@@ -1235,6 +1238,7 @@ public sealed class HashiCorpVaultAdaptersTests
         }
 
         // Concurrent calls test (lock contention triggers inner double-check)
+        var concurrentLoginCalls = 0;
         var concurrentClient = new HashiCorpVaultClient(new HashiCorpVaultOptions
         {
             VaultUrl = new Uri("http://127.0.0.1:8200/"),
@@ -1244,6 +1248,7 @@ public sealed class HashiCorpVaultAdaptersTests
             {
                 if (req.RequestUri?.ToString().Contains("auth/approle/login", StringComparison.Ordinal) == true)
                 {
+                    Interlocked.Increment(ref concurrentLoginCalls);
                     await Task.Delay(25);
                     return new HttpResponseMessage(HttpStatusCode.OK)
                     {
@@ -1264,6 +1269,7 @@ public sealed class HashiCorpVaultAdaptersTests
             var results = await Task.WhenAll(taskA, taskB);
             results[0].IsSuccess.Should().BeTrue();
             results[1].IsSuccess.Should().BeTrue();
+            concurrentLoginCalls.Should().Be(1);
         }
     }
 
@@ -1485,5 +1491,157 @@ public sealed class HashiCorpVaultAdaptersTests
         var stubSecretStore = new HashiCorpVaultSecretStore(stubOpts);
         stubKeyStore.Dispose();
         stubSecretStore.Dispose();
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_ReadKvSecretAsync_WithNullValue_ReturnsEmptyString()
+    {
+        var httpClient = CreateMockHttpClient(_ =>
+        {
+            var json = "{\"data\":{\"data\":{\"value\":null}}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json)
+            });
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+        var result = await client.ReadKvSecretAsync("null-sec", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(string.Empty);
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_ReadKeyDataAsync_MissingDataInner_ReturnsKeyNotFoundWithKeyAndVersion()
+    {
+        var httpClient = CreateMockHttpClient(_ =>
+        {
+            var json = "{\"data\":{}}";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json)
+            });
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+        var keyId = KeyIdentifier.Prefixed("k-missing");
+        var version = new KeyVersion(2);
+        var result = await client.ReadKeyDataAsync(keyId, version, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.KeyNotFound");
+        result.Error.Description.Should().Contain($"{keyId}:{version}");
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_ReadKeyDataAsync_AlgorithmOmittedOrWhitespace_DefaultsToAes256Gcm()
+    {
+        var rawKey = new byte[] { 1, 2, 3, 4 };
+        var httpClient = CreateMockHttpClient(_ =>
+        {
+            var json = JsonSerializer.Serialize(new
+            {
+                data = new
+                {
+                    data = new Dictionary<string, string>
+                    {
+                        ["key_bytes"] = Convert.ToBase64String(rawKey),
+                        ["key_id"] = "k-algo-default",
+                        ["version"] = "1",
+                        ["algorithm"] = "   "
+                    }
+                }
+            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json)
+            });
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+        var keyId = KeyIdentifier.Prefixed("k-algo-default");
+        var result = await client.ReadKeyDataAsync(keyId, KeyVersion.Initial, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Metadata.AlgorithmId.Should().Be("AES-256-GCM");
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_AppRoleAuthentication_LogsInAndCachesTokenAcrossCalls()
+    {
+        var loginCalls = 0;
+        string? capturedTokenHeader = null;
+
+        var httpClient = CreateMockHttpClient(req =>
+        {
+            if (req.RequestUri?.ToString().Contains("auth/approle/login", StringComparison.Ordinal) == true)
+            {
+                loginCalls++;
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"auth\":{\"client_token\":\"approle-token-abc\",\"lease_duration\":3600}}")
+                };
+                return Task.FromResult(response);
+            }
+
+            if (req.Headers.TryGetValues("X-Vault-Token", out var vals))
+            {
+                capturedTokenHeader = System.Linq.Enumerable.FirstOrDefault(vals);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"data\":{\"data\":{\"value\":\"cached-val\"}}}")
+            });
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "approle-role-id",
+            SecretId = "approle-secret-id",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+
+        // First call triggers AppRole login
+        var res1 = await client.ReadKvSecretAsync("test-key", CancellationToken.None);
+        res1.IsSuccess.Should().BeTrue();
+        res1.Value.Should().Be("cached-val");
+        capturedTokenHeader.Should().Be("approle-token-abc");
+        loginCalls.Should().Be(1);
+
+        // Second call should reuse cached token without logging in again
+        var res2 = await client.ReadKvSecretAsync("test-key", CancellationToken.None);
+        res2.IsSuccess.Should().BeTrue();
+        res2.Value.Should().Be("cached-val");
+        loginCalls.Should().Be(1);
     }
 }
