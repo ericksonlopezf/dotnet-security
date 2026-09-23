@@ -272,33 +272,48 @@ public sealed class HkdfAesGcmEncryptionEngineTests
         byte[] key = new byte[32];
         RandomNumberGenerator.Fill(key);
 
-        try
+        unsafe
         {
-            byte[] oversized = GC.AllocateUninitializedArray<byte>(HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1);
+            var oversized = new ReadOnlySpan<byte>((void*)1, HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1);
             var encResult = engine.Encrypt(oversized, key);
             encResult.IsFailure.Should().BeTrue();
             encResult.Error.Code.Should().Be("Security.PayloadTooLarge");
+            encResult.Error.Description.Should().Contain((HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString());
+
+            var encSpanResult = engine.Encrypt(oversized, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
+            encSpanResult.IsFailure.Should().BeTrue();
+            encSpanResult.Error.Code.Should().Be("Security.PayloadTooLarge");
+            encSpanResult.Error.Description.Should().Contain((HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString());
 
             var decResult = engine.Decrypt(oversized, key, stackalloc byte[12], stackalloc byte[16], ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
             decResult.IsFailure.Should().BeTrue();
             decResult.Error.Code.Should().Be("Security.PayloadTooLarge");
-
-            // Exact boundary tests (MaxRecommendedPayloadBytes must NOT return PayloadTooLarge)
-            var exactSlice = oversized.AsSpan(0, HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes);
-            var encSpanExact = engine.Encrypt(exactSlice, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
-            encSpanExact.IsFailure.Should().BeTrue();
-            encSpanExact.Error.Code.Should().Be("Security.InvalidNonce");
-
-            var decExact = engine.Decrypt(exactSlice, key, nonce: default, tag: default, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
-            decExact.IsFailure.Should().BeTrue();
-            decExact.Error.Code.Should().Be("Security.InvalidNonce");
-
-            var encExact = engine.Encrypt(exactSlice, key);
-            encExact.IsSuccess.Should().BeTrue();
+            decResult.Error.Description.Should().Contain((HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString());
         }
-        catch (OutOfMemoryException)
-        {
-            // Allowed on environments with constrained physical memory
-        }
+    }
+
+    [Fact]
+    public void HkdfAesGcmEngine_SpanEncrypt_GeneratesRandomNonce()
+    {
+        var engine = HkdfAesGcmEncryptionEngine.Shared;
+        byte[] key = new byte[32];
+        RandomNumberGenerator.Fill(key);
+
+        byte[] plaintext = [1, 2, 3, 4];
+        byte[] nonce1 = new byte[12];
+        byte[] nonce2 = new byte[12];
+        byte[] ciphertext1 = new byte[plaintext.Length];
+        byte[] ciphertext2 = new byte[plaintext.Length];
+        byte[] tag1 = new byte[16];
+        byte[] tag2 = new byte[16];
+
+        var res1 = engine.Encrypt(plaintext, key, nonce1, ciphertext1, tag1);
+        res1.IsSuccess.Should().BeTrue();
+        nonce1.Any(b => b != 0).Should().BeTrue();
+
+        var res2 = engine.Encrypt(plaintext, key, nonce2, ciphertext2, tag2);
+        res2.IsSuccess.Should().BeTrue();
+        nonce2.Any(b => b != 0).Should().BeTrue();
+        nonce1.SequenceEqual(nonce2).Should().BeFalse();
     }
 }

@@ -429,6 +429,7 @@ public sealed class GoogleCloudAdaptersTests
         var services = new ServiceCollection();
         var exServices = Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddGoogleCloudSecurity(_ => { }));
         exServices.ParamName.Should().Be("services");
+        exServices.StackTrace.Should().NotContain("OptionsServiceCollectionExtensions");
 
         var exConfigure = Assert.Throws<ArgumentNullException>(() => services.AddGoogleCloudSecurity(null!));
         exConfigure.ParamName.Should().Be("configure");
@@ -453,32 +454,75 @@ public sealed class GoogleCloudAdaptersTests
         var secretStore = new GoogleCloudSecretManagerStore(options);
         keyStore.Should().NotBeNull();
         secretStore.Should().NotBeNull();
+
+        // Logger null checks
+        var actKmsNullLogger = () => new GoogleCloudKmsKeyStore(options, null!);
+        actKmsNullLogger.Should().Throw<ArgumentNullException>().Which.ParamName.Should().Be("logger");
+
+        var actSmNullLogger = () => new GoogleCloudSecretManagerStore(options, null!);
+        actSmNullLogger.Should().Throw<ArgumentNullException>().Which.ParamName.Should().Be("logger");
+
+        // Missing project ID and clients throws InvalidOperationException with specific message
+        var emptyOpts = Options.Create(new GoogleCloudSecurityOptions
+        {
+            EnableDevelopmentInMemoryStub = false,
+            ProjectId = null,
+            KmsClient = null,
+            SecretManagerClient = null
+        });
+        var actEmptyKms = () => new GoogleCloudKmsKeyStore(emptyOpts);
+        actEmptyKms.Should().Throw<InvalidOperationException>()
+            .WithMessage("*GoogleCloudKmsKeyStore requires configured ProjectId*");
+
+        var actEmptySm = () => new GoogleCloudSecretManagerStore(emptyOpts);
+        actEmptySm.Should().Throw<InvalidOperationException>()
+            .WithMessage("*GoogleCloudSecretManagerStore requires configured ProjectId*");
     }
 
     [Fact]
     public async Task GoogleCloudKeyStore_MissingSecretClientOrProjectId_ReturnsInvalidCiphertext()
     {
         var kms = Substitute.For<KeyManagementServiceClient>();
-        var options = Options.Create(new GoogleCloudSecurityOptions
+        var sm = Substitute.For<SecretManagerServiceClient>();
+
+        // Both null
+        var optionsBothNull = Options.Create(new GoogleCloudSecurityOptions
         {
             ProjectId = null,
             KmsClient = kms,
             SecretManagerClient = null,
             EnableDevelopmentInMemoryStub = false
         });
-        using var store = new GoogleCloudKmsKeyStore(options);
+        using var storeBothNull = new GoogleCloudKmsKeyStore(optionsBothNull);
 
         var key = new CryptographicKey(new KeyMetadata(KeyIdentifier.Prefixed("k"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256", DateTimeOffset.UtcNow), SecretBuffer.CreateRandom(32));
 
-        var saveResult = await store.SaveKeyAsync(key);
+        var saveResult = await storeBothNull.SaveKeyAsync(key);
         saveResult.IsFailure.Should().BeTrue();
         saveResult.Error.Description.Should().Contain("Google Cloud SecretManagerClient or ProjectId is required");
 
-        var getResult = await store.GetKeyAsync(KeyIdentifier.Prefixed("k"), KeyVersion.Initial);
+        var getResult = await storeBothNull.GetKeyAsync(KeyIdentifier.Prefixed("k"), KeyVersion.Initial);
         getResult.IsFailure.Should().BeTrue();
         getResult.Error.Description.Should().Contain("Google Cloud SecretManagerClient or ProjectId is required");
 
-        await Assert.ThrowsAsync<ArgumentNullException>(() => store.SaveKeyAsync(null!).AsTask());
+
+        // SecretManagerClient set, but ProjectId is null
+        var optionsNoProj = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = null,
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var storeNoProj = new GoogleCloudKmsKeyStore(optionsNoProj);
+        var saveNoProj = await storeNoProj.SaveKeyAsync(key);
+        saveNoProj.IsFailure.Should().BeTrue();
+        saveNoProj.Error.Description.Should().Contain("Google Cloud SecretManagerClient or ProjectId is required");
+        var getNoProj = await storeNoProj.GetKeyAsync(KeyIdentifier.Prefixed("k"), KeyVersion.Initial);
+        getNoProj.IsFailure.Should().BeTrue();
+        getNoProj.Error.Description.Should().Contain("Google Cloud SecretManagerClient or ProjectId is required");
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => storeBothNull.SaveKeyAsync(null!).AsTask());
     }
 
     [Fact]
@@ -546,14 +590,17 @@ public sealed class GoogleCloudAdaptersTests
         var store = new GoogleCloudSecretManagerStore(options);
 
         // Success direct AddSecretVersion
+        SecretPayload? capturedDirectPayload = null;
         client.AddSecretVersionAsync(
             Arg.Is<SecretName>(n => n.SecretId == "app-direct" && n.ProjectId == "test-proj"),
-            Arg.Is<SecretPayload>(p => p.Data.ToStringUtf8() == "direct-val"),
+            Arg.Do<SecretPayload>(p => capturedDirectPayload = p),
             Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new SecretVersion()));
 
         var directResult = await store.SetSecretAsync("direct", "direct-val");
         directResult.IsSuccess.Should().BeTrue();
+        capturedDirectPayload.Should().NotBeNull();
+        capturedDirectPayload!.Data.ToStringUtf8().Should().Be("direct-val");
 
         // 404 on AddSecretVersion triggers CreateSecretAsync then retry AddSecretVersion
         var callCount = 0;
@@ -571,15 +618,19 @@ public sealed class GoogleCloudAdaptersTests
                 return Task.FromResult(new SecretVersion());
             });
 
+        Secret? capturedSecretSm = null;
         client.CreateSecretAsync(
             Arg.Is<ProjectName>(p => p.ProjectId == "test-proj"),
             Arg.Is<string>(s => s == "app-create-retry"),
-            Arg.Any<Secret>(),
+            Arg.Do<Secret>(s => capturedSecretSm = s),
             Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(new Secret()));
 
         var createRetryResult = await store.SetSecretAsync("create-retry", "val");
         createRetryResult.IsSuccess.Should().BeTrue();
+        capturedSecretSm.Should().NotBeNull();
+        capturedSecretSm!.Replication.Should().NotBeNull();
+        capturedSecretSm.Replication.Automatic.Should().NotBeNull();
 
         // 404 then CreateSecretAsync throws
         client.AddSecretVersionAsync(
@@ -673,7 +724,9 @@ public sealed class GoogleCloudAdaptersTests
         var saveK2 = await store.SaveKeyAsync(k2);
         saveK2.IsSuccess.Should().BeTrue();
         capturedSecret.Should().NotBeNull();
-        capturedSecret!.Labels["erickson-key-id"].Should().StartWith("k2");
+        capturedSecret!.Replication.Should().NotBeNull();
+        capturedSecret.Replication.Automatic.Should().NotBeNull();
+        capturedSecret.Labels["erickson-key-id"].Should().StartWith("k2");
         capturedSecret.Labels["erickson-version"].Should().Be("1");
         capturedSecret.Labels["erickson-purpose"].Should().Be("encryption");
 
@@ -826,14 +879,16 @@ public sealed class GoogleCloudAdaptersTests
         getResult.Value.GetKeyBytes()[0].Should().Be(42);
 
         // 404 KeyNotFound
+        var missingId = KeyIdentifier.Prefixed("missing");
         sm.AccessSecretVersionAsync(
             Arg.Is<SecretVersionName>(v => v.SecretId.Contains("missing")),
             Arg.Any<CancellationToken>())
             .Throws(new RpcException(new Status(StatusCode.NotFound, "Not found")));
 
-        var notFound = await store.GetKeyAsync(KeyIdentifier.Prefixed("missing"), version);
+        var notFound = await store.GetKeyAsync(missingId, version);
         notFound.IsFailure.Should().BeTrue();
         notFound.Error.Code.Should().Be("Security.KeyNotFound");
+        notFound.Error.Description.Should().Contain($"{missingId}:{version}");
 
         // General RpcException
         sm.AccessSecretVersionAsync(
@@ -910,14 +965,16 @@ public sealed class GoogleCloudAdaptersTests
         updatedPayload!.Data.ToStringUtf8().Should().Contain("\"status\":\"Active\"");
 
         // KeyNotFound during update
+        var missingUpdateId = KeyIdentifier.Prefixed("missing");
         sm.AccessSecretVersionAsync(
             Arg.Is<SecretVersionName>(v => v.SecretId.Contains("missing")),
             Arg.Any<CancellationToken>())
             .Throws(new RpcException(new Status(StatusCode.NotFound, "Not found")));
 
-        var notFound = await store.UpdateStatusAsync(KeyIdentifier.Prefixed("missing"), version, KeyStatus.Retired);
-        notFound.IsFailure.Should().BeTrue();
-        notFound.Error.Code.Should().Be("Security.KeyNotFound");
+        var notFoundUpdate = await store.UpdateStatusAsync(missingUpdateId, version, KeyStatus.Retired);
+        notFoundUpdate.IsFailure.Should().BeTrue();
+        notFoundUpdate.Error.Code.Should().Be("Security.KeyNotFound");
+        notFoundUpdate.Error.Description.Should().Contain($"{missingUpdateId}:{version}");
 
         // AddSecretVersion fails during update
         sm.AddSecretVersionAsync(
@@ -929,5 +986,72 @@ public sealed class GoogleCloudAdaptersTests
         var updateFail = await store.UpdateStatusAsync(keyId, version, KeyStatus.Retired);
         updateFail.IsFailure.Should().BeTrue();
         updateFail.Error.Description.Should().Contain("Google Cloud KMS status update failed (Internal): Write fail");
+    }
+
+    [Fact]
+    public void GoogleCloudKmsKeyStore_SerializeKeyRecord_ValidatesAllFields()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var meta = new KeyMetadata(KeyIdentifier.Prefixed("k"), new KeyVersion(3), KeyPurpose.Signing, KeyStatus.Retired, "HMAC-SHA256", now, now.AddDays(10), now.AddDays(2));
+        var rawBytes = new byte[] { 10, 20, 30 };
+        var json = GoogleCloudKmsKeyStore.SerializeKeyRecord(meta, rawBytes);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("key_id").GetString().Should().Be(meta.KeyId.Value);
+        root.GetProperty("version").GetString().Should().Be("3");
+        root.GetProperty("purpose").GetString().Should().Be("Signing");
+        root.GetProperty("status").GetString().Should().Be("Retired");
+        root.GetProperty("algorithm").GetString().Should().Be("HMAC-SHA256");
+        root.GetProperty("created_at").GetString().Should().Contain("T");
+        root.GetProperty("expires_at").GetString().Should().Contain("T");
+        root.GetProperty("revoked_at").GetString().Should().Contain("T");
+        root.GetProperty("key_bytes").GetString().Should().Be(Convert.ToBase64String(rawBytes));
+    }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_GetKeyAsync_FallbackBranches_Covered()
+    {
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var rawKey = new byte[32];
+        rawKey[0] = 77;
+        var json = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["key_bytes"] = Convert.ToBase64String(rawKey),
+            ["key_id"] = "   ",
+            ["version"] = "not-a-number",
+            ["purpose"] = "InvalidPurpose",
+            ["status"] = "InvalidStatus"
+        });
+
+        sm.AccessSecretVersionAsync(
+            Arg.Any<SecretVersionName>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        var keyId = KeyIdentifier.Prefixed("fallback-key");
+        var version = new KeyVersion(9);
+        var result = await store.GetKeyAsync(keyId, version);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Metadata.KeyId.Should().Be(keyId);
+        result.Value.Metadata.Version.Should().Be(version);
+        result.Value.Metadata.Purpose.Should().Be(KeyPurpose.Encryption);
+        result.Value.Metadata.Status.Should().Be(KeyStatus.Active);
+        result.Value.Metadata.AlgorithmId.Should().Be("AES-256-GCM");
+        result.Value.Metadata.ExpiresAtUtc.Should().BeNull();
+        result.Value.Metadata.RevokedAtUtc.Should().BeNull();
     }
 }

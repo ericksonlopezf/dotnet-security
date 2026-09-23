@@ -71,6 +71,53 @@ public sealed class Saml2AssertionDecryptorTests
     }
 
     [Fact]
+    public void DecryptAssertion_OversizedPayload_ExceedsMaxCharactersLimit_FailsWithDecryptionError()
+    {
+        using var rsa = RSA.Create(2048);
+        var certReq = new CertificateRequest("CN=SamlDecryptionOversizedTest", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certWithKey = certReq.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddYears(1));
+
+        var padding = new string('x', 2_000_100);
+        var assertionXml = $@"<saml:Assertion xmlns:saml=""urn:oasis:names:tc:SAML:2.0:assertion"" ID=""_oversized"">
+  <saml:Issuer>{padding}</saml:Issuer>
+</saml:Assertion>";
+
+        var plainDoc = new XmlDocument { XmlResolver = null };
+        plainDoc.LoadXml(assertionXml);
+
+        using var aes = Aes.Create();
+        aes.KeySize = 256;
+        aes.GenerateKey();
+
+        var encryptedXml = new EncryptedXml();
+        var encryptedBytes = encryptedXml.EncryptData(plainDoc.DocumentElement!, aes, false);
+
+        var encryptedData = new EncryptedData
+        {
+            Type = EncryptedXml.XmlEncElementUrl,
+            EncryptionMethod = new EncryptionMethod(EncryptedXml.XmlEncAES256Url)
+        };
+
+        var encryptedKey = new EncryptedKey
+        {
+            EncryptionMethod = new EncryptionMethod(EncryptedXml.XmlEncRSA15Url),
+            CipherData = new CipherData(EncryptedXml.EncryptKey(aes.Key, rsa, false))
+        };
+        encryptedData.KeyInfo.AddClause(new KeyInfoEncryptedKey(encryptedKey));
+        encryptedData.CipherData.CipherValue = encryptedBytes;
+
+        var envelopeDoc = new XmlDocument { XmlResolver = null };
+        var encAssertionElem = envelopeDoc.CreateElement("saml", "EncryptedAssertion", "urn:oasis:names:tc:SAML:2.0:assertion");
+        encAssertionElem.AppendChild(envelopeDoc.ImportNode(encryptedData.GetXml(), true));
+        envelopeDoc.AppendChild(encAssertionElem);
+
+        var result = _decryptor.DecryptAssertion(encAssertionElem, certWithKey);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.DecryptionFailed");
+    }
+
+    [Fact]
     public void DecryptAssertion_MissingEncryptedData_ReturnsInvalidToken()
     {
         using var rsa = RSA.Create(2048);

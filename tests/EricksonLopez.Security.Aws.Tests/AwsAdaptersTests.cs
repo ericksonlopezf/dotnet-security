@@ -650,8 +650,9 @@ public sealed class AwsAdaptersTests
         var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", now, now.AddDays(30), now.AddDays(60));
         var key = new CryptographicKey(metadata, SecretBuffer.CreateRandom(32));
 
+        EncryptRequest? capturedEncryptRequest = null;
         kmsMock.EncryptAsync(
-            Arg.Any<EncryptRequest>(),
+            Arg.Do<EncryptRequest>(r => capturedEncryptRequest = r),
             Arg.Any<CancellationToken>())
             .Returns(new EncryptResponse { CiphertextBlob = new MemoryStream(new byte[] { 11, 22, 33 }) });
 
@@ -663,10 +664,24 @@ public sealed class AwsAdaptersTests
 
         var result = await store.SaveKeyAsync(key);
         result.IsSuccess.Should().BeTrue();
+        capturedEncryptRequest.Should().NotBeNull();
+        capturedEncryptRequest!.KeyId.Should().Be("arn:aws:kms:us-east-1:12345:key/xyz");
+        capturedEncryptRequest.Plaintext.Should().NotBeNull();
+
         capturedSecretString.Should().NotBeNull();
-        capturedSecretString.Should().Contain("expires_at");
-        capturedSecretString.Should().Contain("revoked_at");
-        capturedSecretString.Should().Contain("key_bytes");
+        using (var doc = JsonDocument.Parse(capturedSecretString!))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("key_id").GetString().Should().Be(keyId.Value);
+            root.GetProperty("version").GetString().Should().Be("1");
+            root.GetProperty("purpose").GetString().Should().Be("Encryption");
+            root.GetProperty("status").GetString().Should().Be("Active");
+            root.GetProperty("algorithm").GetString().Should().Be("AES-256-GCM");
+            root.GetProperty("created_at").GetString().Should().Contain("T");
+            root.GetProperty("expires_at").GetString().Should().Contain("T");
+            root.GetProperty("revoked_at").GetString().Should().Contain("T");
+            root.GetProperty("key_bytes").GetString().Should().Be(Convert.ToBase64String(new byte[] { 11, 22, 33 }));
+        }
 
         // Save key without optional expires_at and revoked_at
         var simpleMeta = new KeyMetadata(keyId, new KeyVersion(2), KeyPurpose.Signing, KeyStatus.Active, "HMAC-SHA256", now);
@@ -774,14 +789,38 @@ public sealed class AwsAdaptersTests
             Arg.Any<CancellationToken>())
             .Returns(new GetSecretValueResponse { SecretString = jsonRecord });
 
+        DecryptRequest? capturedDecrypt = null;
         kmsMock.DecryptAsync(
-            Arg.Any<DecryptRequest>(),
+            Arg.Do<DecryptRequest>(r => capturedDecrypt = r),
             Arg.Any<CancellationToken>())
             .Returns(new DecryptResponse { Plaintext = new MemoryStream(decryptedPlaintext) });
 
         var result = await store.GetKeyAsync(keyId, version);
         result.IsSuccess.Should().BeTrue();
         result.Value.GetKeyBytes()[0].Should().Be(42);
+        result.Value.Metadata.AlgorithmId.Should().Be("AES-256-GCM");
+        capturedDecrypt.Should().NotBeNull();
+        capturedDecrypt!.CiphertextBlob.Should().NotBeNull();
+        using (var ms = new MemoryStream())
+        {
+            capturedDecrypt.CiphertextBlob.CopyTo(ms);
+            ms.ToArray().Should().Equal(encryptedBlob);
+        }
+
+        // Missing key_bytes property in JSON uses empty fallback
+        var jsonNoBytes = JsonSerializer.Serialize(new
+        {
+            key_id = keyId.Value,
+            version = "1"
+        });
+        secretsMock.GetSecretValueAsync(
+            Arg.Is<GetSecretValueRequest>(r => r.SecretId.Contains("nobytes")),
+            Arg.Any<CancellationToken>())
+            .Returns(new GetSecretValueResponse { SecretString = jsonNoBytes });
+
+        var noBytesResult = await store.GetKeyAsync(KeyIdentifier.Prefixed("nobytes"), version);
+        noBytesResult.IsFailure.Should().BeTrue();
+        noBytesResult.Error.Description.Should().Contain("AWS retrieve/decrypt failed");
 
         // GetSecretValue returns null/whitespace SecretString
         secretsMock.GetSecretValueAsync(
@@ -789,9 +828,11 @@ public sealed class AwsAdaptersTests
             Arg.Any<CancellationToken>())
             .Returns(new GetSecretValueResponse { SecretString = "   " });
 
-        var emptyResult = await store.GetKeyAsync(KeyIdentifier.Prefixed("empty"), version);
+        var emptyId = KeyIdentifier.Prefixed("empty");
+        var emptyResult = await store.GetKeyAsync(emptyId, version);
         emptyResult.IsFailure.Should().BeTrue();
         emptyResult.Error.Code.Should().Be("Security.KeyNotFound");
+        emptyResult.Error.Description.Should().Contain($"{emptyId}:{version}");
 
         // Exception thrown during KMS decrypt
         kmsMock.DecryptAsync(
@@ -920,5 +961,77 @@ public sealed class AwsAdaptersTests
         var ownedStore = new AwsKmsKeyStore(ownedOptions);
         ownedStore.Dispose();
         ownedStore.Dispose();
+    }
+
+    [Fact]
+    public void AwsKmsKeyStore_LiveClient_ConstructorWithCredentials_Behavior()
+    {
+        var ownedWithCreds = Options.Create(new AwsSecurityOptions
+        {
+            KmsKeyId = "arn:aws:kms:us-east-1:12345:key/test",
+            Credentials = new BasicAWSCredentials("dummyAccess", "dummySecret")
+        });
+        var store = new AwsKmsKeyStore(ownedWithCreds);
+        store.Dispose();
+    }
+
+    [Fact]
+    public void AwsSecretsManagerSecretStore_LiveClient_ConstructorAndDisposal_Behavior()
+    {
+        var secretsMock = Substitute.For<IAmazonSecretsManager>();
+        var unownedOptions = Options.Create(new AwsSecurityOptions
+        {
+            SecretsManagerClient = secretsMock
+        });
+        var unownedStore = new AwsSecretsManagerSecretStore(unownedOptions);
+        unownedStore.Dispose();
+        secretsMock.DidNotReceive().Dispose();
+
+        var ownedNoCreds = Options.Create(new AwsSecurityOptions
+        {
+            Region = "us-east-1",
+            SecretPrefix = "app/"
+        });
+        var storeNoCreds = new AwsSecretsManagerSecretStore(ownedNoCreds);
+        storeNoCreds.Dispose();
+
+        var invalidOptions = Options.Create(new AwsSecurityOptions
+        {
+            Region = "us-east-1",
+            SecretPrefix = string.Empty,
+            Credentials = null,
+            SecretsManagerClient = null
+        });
+        var actInvalid = () => new AwsSecretsManagerSecretStore(invalidOptions);
+        actInvalid.Should().Throw<InvalidOperationException>()
+            .WithMessage("*requires configured Credentials*");
+
+        var ownedWithCreds = Options.Create(new AwsSecurityOptions
+        {
+            Region = "us-east-1",
+            Credentials = new BasicAWSCredentials("dummyAccess", "dummySecret")
+        });
+        var storeWithCreds = new AwsSecretsManagerSecretStore(ownedWithCreds);
+        storeWithCreds.Dispose();
+    }
+
+    [Fact]
+    public void AwsKmsKeyStore_SerializeKeyRecord_ValidatesAllFields()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var meta = new KeyMetadata(KeyIdentifier.Prefixed("k"), new KeyVersion(5), KeyPurpose.Signing, KeyStatus.Retired, "HMAC-SHA512", now, now.AddDays(10), now.AddDays(1));
+        var rawBytes = new byte[] { 1, 2, 3, 4 };
+        var json = AwsKmsKeyStore.SerializeKeyRecord(meta, rawBytes);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("key_id").GetString().Should().Be(meta.KeyId.Value);
+        root.GetProperty("version").GetString().Should().Be("5");
+        root.GetProperty("purpose").GetString().Should().Be("Signing");
+        root.GetProperty("status").GetString().Should().Be("Retired");
+        root.GetProperty("algorithm").GetString().Should().Be("HMAC-SHA512");
+        root.GetProperty("created_at").GetString().Should().Contain("T");
+        root.GetProperty("expires_at").GetString().Should().Contain("T");
+        root.GetProperty("revoked_at").GetString().Should().Contain("T");
+        root.GetProperty("key_bytes").GetString().Should().Be(Convert.ToBase64String(rawBytes));
     }
 }

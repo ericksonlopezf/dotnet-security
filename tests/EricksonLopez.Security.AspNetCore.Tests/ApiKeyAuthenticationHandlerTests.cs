@@ -192,6 +192,27 @@ public sealed class ApiKeyAuthenticationHandlerTests
     }
 
     [Fact]
+    public async Task HandleAuthenticateAsync_EmptyCustomHeader_FallsBackToAuthorizationHeader_Succeeds()
+    {
+        var options = new ApiKeyAuthenticationOptions { HeaderName = "X-Api-Key" };
+        var monitor = new TestOptionsMonitor<ApiKeyAuthenticationOptions>(options);
+        var validator = new FakeApiKeyValidator();
+        var handler = new ApiKeyAuthenticationHandler(monitor, NullLoggerFactory.Instance, UrlEncoder.Default, validator);
+
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Api-Key"] = "";
+        context.Request.Headers["Authorization"] = "ApiKey secret_key_123";
+
+        var scheme = new AuthenticationScheme("ApiKey", "ApiKey", typeof(ApiKeyAuthenticationHandler));
+        await handler.InitializeAsync(scheme, context);
+
+        var result = await handler.AuthenticateAsync();
+
+        result.Succeeded.Should().BeTrue();
+        result.Principal!.Identity!.Name.Should().Be("Analytics Client");
+    }
+
+    [Fact]
     public async Task HandleAuthenticateAsync_InvalidKey_ReturnsFailure()
     {
         var options = new ApiKeyAuthenticationOptions { HeaderName = "X-Api-Key" };

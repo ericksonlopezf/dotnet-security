@@ -45,7 +45,7 @@ public sealed class SecretBuffer : ISecretBuffer
         get
         {
             var buffer = _rentedBuffer;
-            ObjectDisposedException.ThrowIf(_disposed || buffer is null, this);
+            ObjectDisposedException.ThrowIf(_disposed, this);
             return buffer.AsSpan(0, _length);
         }
     }
@@ -128,7 +128,7 @@ public sealed class SecretBuffer : ISecretBuffer
     public Span<byte> GetWritableSpan()
     {
         var buffer = _rentedBuffer;
-        ObjectDisposedException.ThrowIf(_disposed || buffer is null, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         return buffer.AsSpan(0, _length);
     }
 
@@ -140,7 +140,7 @@ public sealed class SecretBuffer : ISecretBuffer
     public bool FixedTimeEquals(ReadOnlySpan<byte> other)
     {
         var buffer = _rentedBuffer;
-        ObjectDisposedException.ThrowIf(_disposed || buffer is null, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         return CryptographicOperations.FixedTimeEquals(buffer.AsSpan(0, _length), other);
     }
 
@@ -165,7 +165,7 @@ public sealed class SecretBuffer : ISecretBuffer
         GC.SuppressFinalize(this);
     }
 
-    private void DisposeCore(bool fromFinalizer)
+    internal void DisposeCore(bool fromFinalizer)
     {
         _disposed = true;
         var buffer = Interlocked.Exchange(ref _rentedBuffer, null);

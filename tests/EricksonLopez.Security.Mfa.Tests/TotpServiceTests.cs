@@ -936,5 +936,90 @@ public sealed class TotpServiceTests
         var resExplicit = await service.VerifyCodeAsync(Secret, diffCode, timestamp: differentTime, options: new TotpOptions());
         resExplicit.Should().BeTrue();
     }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_WithCustomDigitsAndDrift_RespectsOptions()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var now = fakeTime.GetUtcNow();
+        var customOptions = new TotpOptions { Digits = 8, AllowedDriftSteps = 2, PreventReplay = false };
+        var code = service.ComputeCode(Secret, now.AddSeconds(60), customOptions);
+        code.Length.Should().Be(8);
+
+        var result = await service.VerifyCodeAsync(Secret, code, now, customOptions);
+        result.Should().BeTrue("custom 8-digit options with 2 drift steps must be respected");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_SaturatedCacheWithExpiredEntry_PrunesAndSucceeds()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 1, RoutinePruneThreshold = 10 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        (await service.VerifyCodeAsync(Secret, code1, now, options)).Should().BeTrue();
+
+        // Advance time past expiry
+        var futureTime = now.AddMinutes(10);
+        fakeTime.SetUtcNow(futureTime);
+        var code2 = service.ComputeCode(Secret, futureTime, options);
+
+        // Cache was at capacity (1), but entry is expired -> prune runs and adds code2
+        var result = await service.VerifyCodeAsync(Secret, code2, futureTime, options);
+        result.Should().BeTrue("expired code should be pruned at saturation allowing new verification");
+    }
+
+    [Fact]
+    public void VerifyCode_SaturatedCacheWithExpiredEntry_PrunesAndSucceeds()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 1, RoutinePruneThreshold = 10 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        service.VerifyCode(Secret, code1, now, options).Should().BeTrue();
+
+        // Advance time past expiry
+        var futureTime = now.AddMinutes(10);
+        fakeTime.SetUtcNow(futureTime);
+        var code2 = service.ComputeCode(Secret, futureTime, options);
+
+        var result = service.VerifyCode(Secret, code2, futureTime, options);
+        result.Should().BeTrue("expired code should be pruned synchronously at saturation");
+    }
+
+    [Fact]
+    public void VerifyCode_SaturatedCache_BypassesOneSecondThrottleToPruneExpiredCodes()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 1, RoutinePruneThreshold = 10 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        service.VerifyCode(Secret, code1, now, options).Should().BeTrue();
+
+        // Advance time by 500ms (within 1 second throttle window)
+        // But code1 is expired relative to a check with zero expiry or past timestamp
+        // Verify another code within 500ms after making code1 expired
+        var nextTime = now.AddSeconds(120);
+        fakeTime.SetUtcNow(nextTime);
+        var code2 = service.ComputeCode(Secret, nextTime, options);
+
+        // First verification sets lastTicks
+        service.VerifyCode(Secret, code2, nextTime, options).Should().BeTrue();
+
+        // Immediately (within 100ms) verify with expired code in saturated cache:
+        // Even within 100ms, because Count == MaxConsumedCodesCapacity, throttle is bypassed and prune runs!
+        var nextNextTime = nextTime.AddSeconds(120);
+        fakeTime.SetUtcNow(nextNextTime);
+        var code3 = service.ComputeCode(Secret, nextNextTime, options);
+        var res = service.VerifyCode(Secret, code3, nextNextTime, options);
+        res.Should().BeTrue("at capacity, throttle is bypassed so expired entries are pruned");
+    }
 }
 

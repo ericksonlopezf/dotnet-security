@@ -297,8 +297,10 @@ public sealed class HaveIBeenPwnedClientTests
     }
 
     [Theory]
-    [InlineData(84)] // maxByteCount = 255 <= 256 (stackalloc)
-    [InlineData(85)] // maxByteCount = 258 > 256 (ArrayPool.Rent)
+    [InlineData(84)]
+    [InlineData(85)]
+    [InlineData(256)] // byteCount = 256 <= 256 (stackalloc)
+    [InlineData(257)] // byteCount = 257 > 256 (ArrayPool.Rent)
     [SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms", Justification = "Testing SHA-1 calculation for HIBP range query.")]
     public async Task CheckPasswordAsync_BoundaryPasswords_Around256MaxBytes_ComputesCorrectSha1(int length)
     {

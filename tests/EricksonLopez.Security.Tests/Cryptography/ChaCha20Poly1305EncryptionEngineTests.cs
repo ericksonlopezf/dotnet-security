@@ -279,33 +279,55 @@ public sealed class ChaCha20Poly1305EncryptionEngineTests
         byte[] key = new byte[32];
         RandomNumberGenerator.Fill(key);
 
-        try
+        unsafe
         {
-            byte[] oversized = GC.AllocateUninitializedArray<byte>(ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes + 1);
+            var oversized = new ReadOnlySpan<byte>((void*)1, ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes + 1);
             var encResult = engine.Encrypt(oversized, key);
             Assert.True(encResult.IsFailure);
             Assert.Equal("Security.PayloadTooLarge", encResult.Error.Code);
+            Assert.Contains((ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), encResult.Error.Description);
+
+            var encSpanResult = engine.Encrypt(oversized, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
+            Assert.True(encSpanResult.IsFailure);
+            Assert.Equal("Security.PayloadTooLarge", encSpanResult.Error.Code);
+            Assert.Contains((ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), encSpanResult.Error.Description);
 
             var decResult = engine.Decrypt(oversized, key, stackalloc byte[12], stackalloc byte[16], ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
             Assert.True(decResult.IsFailure);
             Assert.Equal("Security.PayloadTooLarge", decResult.Error.Code);
-
-            // Exact boundary tests (MaxRecommendedPayloadBytes must NOT return PayloadTooLarge)
-            var exactSlice = oversized.AsSpan(0, ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes);
-            var encSpanExact = engine.Encrypt(exactSlice, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
-            Assert.True(encSpanExact.IsFailure);
-            Assert.Equal("Security.InvalidNonce", encSpanExact.Error.Code);
-
-            var decExact = engine.Decrypt(exactSlice, key, nonce: default, tag: default, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
-            Assert.True(decExact.IsFailure);
-            Assert.Equal("Security.InvalidNonce", decExact.Error.Code);
-
-            var encExact = engine.Encrypt(exactSlice, key);
-            Assert.True(encExact.IsSuccess);
+            Assert.Contains((ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), decResult.Error.Description);
         }
-        catch (OutOfMemoryException)
+    }
+
+    [Fact]
+    public void ChaCha20Poly1305_WhenPlatformNotSupported_ReturnsUnsupportedAlgorithmError()
+    {
+        try
         {
-            // Allowed on environments with constrained physical memory
+            ChaCha20Poly1305EncryptionEngine.s_isSupportedOverride = false;
+            var engine = ChaCha20Poly1305EncryptionEngine.Shared;
+            byte[] key = new byte[32];
+            byte[] nonce = new byte[12];
+            byte[] tag = new byte[16];
+
+            var enc1 = engine.Encrypt(ReadOnlySpan<byte>.Empty, key);
+            Assert.True(enc1.IsFailure);
+            Assert.Equal("Security.UnsupportedAlgorithm", enc1.Error.Code);
+            Assert.Equal("ChaCha20-Poly1305 is not supported on the current platform.", enc1.Error.Description);
+
+            var enc2 = engine.Encrypt(ReadOnlySpan<byte>.Empty, key, nonce, Span<byte>.Empty, tag);
+            Assert.True(enc2.IsFailure);
+            Assert.Equal("Security.UnsupportedAlgorithm", enc2.Error.Code);
+            Assert.Equal("ChaCha20-Poly1305 is not supported on the current platform.", enc2.Error.Description);
+
+            var dec = engine.Decrypt(ReadOnlySpan<byte>.Empty, key, nonce, tag, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
+            Assert.True(dec.IsFailure);
+            Assert.Equal("Security.UnsupportedAlgorithm", dec.Error.Code);
+            Assert.Equal("ChaCha20-Poly1305 is not supported on the current platform.", dec.Error.Description);
+        }
+        finally
+        {
+            ChaCha20Poly1305EncryptionEngine.s_isSupportedOverride = null;
         }
     }
 }

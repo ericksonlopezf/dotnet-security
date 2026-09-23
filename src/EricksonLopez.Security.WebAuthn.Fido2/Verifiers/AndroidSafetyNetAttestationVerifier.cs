@@ -270,7 +270,7 @@ public sealed class AndroidSafetyNetAttestationVerifier : IAttestationVerifier
         return Convert.FromBase64String(standardBase64);
     }
 
-    private static readonly UTF8Encoding StrictUtf8 = new(false, throwOnInvalidBytes: true);
+    internal static readonly UTF8Encoding StrictUtf8 = new(false, throwOnInvalidBytes: true);
 
     private static string DecodeJwsUtf8(byte[] rawBytes) =>
         StrictUtf8.GetString(rawBytes).Trim();

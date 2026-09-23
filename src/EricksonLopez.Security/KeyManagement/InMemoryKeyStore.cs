@@ -28,6 +28,7 @@ public sealed class InMemoryKeyStore : IKeyStore
     public const int MaxKeys = 10_000;
 
     private readonly ConcurrentDictionary<string, (KeyMetadata Metadata, byte[] KeyBytes)> _storage = new(StringComparer.Ordinal);
+    internal int MaxRetries { get; set; } = 10;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="InMemoryKeyStore"/> class.
@@ -110,7 +111,7 @@ public sealed class InMemoryKeyStore : IKeyStore
         // CONC-002/KM-005 fix: use a CAS loop with TryUpdate to prevent lost-update race conditions.
         // Two concurrent callers reading the same entry could overwrite each other's writes.
         // TryUpdate atomically replaces the value only if it still matches the expected current value.
-        const int maxRetries = 10;
+        var maxRetries = MaxRetries;
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
             if (!_storage.TryGetValue(index, out var current))

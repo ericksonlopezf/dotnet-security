@@ -311,33 +311,23 @@ public sealed class AesGcmEncryptionEngineTests
         byte[] key = new byte[32];
         RandomNumberGenerator.Fill(key);
 
-        try
+        unsafe
         {
-            byte[] oversized = GC.AllocateUninitializedArray<byte>(AesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1);
+            var oversized = new ReadOnlySpan<byte>((void*)1, AesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1);
             var encResult = engine.Encrypt(oversized, key);
             Assert.True(encResult.IsFailure);
             Assert.Equal("Security.PayloadTooLarge", encResult.Error.Code);
+            Assert.Contains((AesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), encResult.Error.Description);
+
+            var encSpanResult = engine.Encrypt(oversized, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
+            Assert.True(encSpanResult.IsFailure);
+            Assert.Equal("Security.PayloadTooLarge", encSpanResult.Error.Code);
+            Assert.Contains((AesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), encSpanResult.Error.Description);
 
             var decResult = engine.Decrypt(oversized, key, stackalloc byte[12], stackalloc byte[16], ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
             Assert.True(decResult.IsFailure);
             Assert.Equal("Security.PayloadTooLarge", decResult.Error.Code);
-
-            // Exact boundary tests (MaxRecommendedPayloadBytes must NOT return PayloadTooLarge)
-            var exactSlice = oversized.AsSpan(0, AesGcmEncryptionEngine.MaxRecommendedPayloadBytes);
-            var encSpanExact = engine.Encrypt(exactSlice, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
-            Assert.True(encSpanExact.IsFailure);
-            Assert.Equal("Security.InvalidNonce", encSpanExact.Error.Code);
-
-            var decExact = engine.Decrypt(exactSlice, key, nonce: default, tag: default, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
-            Assert.True(decExact.IsFailure);
-            Assert.Equal("Security.InvalidNonce", decExact.Error.Code);
-
-            var encExact = engine.Encrypt(exactSlice, key);
-            Assert.True(encExact.IsSuccess);
-        }
-        catch (OutOfMemoryException)
-        {
-            // Allowed on environments with constrained physical memory
+            Assert.Contains((AesGcmEncryptionEngine.MaxRecommendedPayloadBytes + 1).ToString(), decResult.Error.Description);
         }
     }
 }

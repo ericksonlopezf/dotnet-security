@@ -126,6 +126,10 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
     // KR-05 (resolved): Per-purpose semaphore prevents thundering herd on concurrent cache misses.
     // Only 1 thread per KeyPurpose fetches from the key store; all others wait and reuse the cached result.
     private readonly ConcurrentDictionary<KeyPurpose, SemaphoreSlim> _purposeSemaphores = new();
+    internal int MaxCacheCapacity { get; set; } = 1000;
+    internal int PurposeSemaphoresCount => _purposeSemaphores.Count;
+    internal int ActiveKeyCacheCount => _activeKeyCache.Count;
+    internal int KeyCacheCount => _keyCache.Count;
 
     /// <summary>
     /// Gets or sets the global default time-to-live for in-memory cached cryptographic keys.
@@ -280,8 +284,6 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
         return keyResult;
     }
 
-    private const int MaxKeyCacheCapacity = 1000;
-
     private void PruneKeyCache(DateTimeOffset now)
     {
         foreach (var kvp in _keyCache)
@@ -295,9 +297,9 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
             }
         }
 
-        if (_keyCache.Count >= MaxKeyCacheCapacity)
+        if (_keyCache.Count >= MaxCacheCapacity)
         {
-            var overflowCount = _keyCache.Count - (int)(MaxKeyCacheCapacity * 0.8);
+            var overflowCount = _keyCache.Count - (int)(MaxCacheCapacity * 0.8);
             if (overflowCount > 0)
             {
                 var oldestKeys = _keyCache
@@ -342,7 +344,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
             return SecurityError.KeyRevoked(keyId.Value, $"The cryptographic key with identifier '{keyId}' is not usable because its status is '{key.Metadata.Status}'.");
         }
 
-        if (_keyCache.Count >= MaxKeyCacheCapacity)
+        if (_keyCache.Count >= MaxCacheCapacity)
         {
             PruneKeyCache(DateTimeOffset.UtcNow);
         }

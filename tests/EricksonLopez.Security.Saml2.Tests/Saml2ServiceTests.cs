@@ -1520,6 +1520,7 @@ public sealed class Saml2ServiceTests : IClassFixture<SamlTestCertificatesFixtur
         var defaultResult = Saml2Service.ValidateAssertionTimestamps(doc.DocumentElement!, nsMgr, DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2));
         defaultResult.IsFailure.Should().BeTrue();
         defaultResult.Error.Code.Should().Be("Security.PolicyViolation");
+        defaultResult.Error.Description.Should().Be("Security policy 'SAML.Timestamp' violation: Assertion missing required Conditions/@NotOnOrAfter expiration attribute.");
 
         // When requireExpiration is explicitly false, it is accepted
         var optionalResult = Saml2Service.ValidateAssertionTimestamps(doc.DocumentElement!, nsMgr, DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2), requireExpiration: false);

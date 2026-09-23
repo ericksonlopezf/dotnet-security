@@ -44,15 +44,8 @@ public readonly struct AuthenticatedContext : IEquatable<AuthenticatedContext>
     /// </summary>
     /// <param name="contextBytes">The raw bytes comprising the context.</param>
     /// <returns>A strongly-typed authenticated context.</returns>
-    public static AuthenticatedContext FromBytes(ReadOnlySpan<byte> contextBytes)
-    {
-        if (contextBytes.IsEmpty)
-        {
-            return Empty;
-        }
-
-        return new AuthenticatedContext(contextBytes.ToArray());
-    }
+    public static AuthenticatedContext FromBytes(ReadOnlySpan<byte> contextBytes) =>
+        new(contextBytes.ToArray());
 
     /// <summary>
     /// Gets the read-only span representation of the authenticated context bytes.

@@ -803,8 +803,48 @@ public sealed class HttpMds3MetadataServiceTests
         // Idempotent dispose
         service.Dispose();
 
-        // Ensure underlying semaphore was actually disposed
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => service.GetMetadataAsync(Guid.NewGuid()));
+        // Ensure underlying semaphore was actually disposed directly
+        var semField = typeof(HttpMds3MetadataService).GetField("_refreshLock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var sem = (SemaphoreSlim)semField!.GetValue(service)!;
+        Assert.Throws<ObjectDisposedException>(() => sem.AvailableWaitHandle);
+
+        // Ensure EnsureCacheLoadedAsync throws ObjectDisposedException with service type name
+        var ex = await Assert.ThrowsAsync<ObjectDisposedException>(() => service.GetMetadataAsync(Guid.NewGuid()));
+        ex.ObjectName.Should().Be(typeof(HttpMds3MetadataService).FullName);
+    }
+
+    [Fact]
+    public async Task ParsePayload_NonObjectMetadataStatement_DoesNotThrowAndParsesSuccessfully()
+    {
+        var targetAaguid = Guid.NewGuid();
+        var payload = new
+        {
+            entries = new object[]
+            {
+                new
+                {
+                    aaguid = targetAaguid.ToString(),
+                    metadataStatement = "not-an-object-string",
+                    statusReports = new object[]
+                    {
+                        new { status = "FIDO_CERTIFIED", effectiveDate = "2024-01-01" }
+                    }
+                }
+            }
+        };
+
+        var jwt = BuildMds3Jwt(payload);
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(jwt, Encoding.UTF8, "application/jwt")
+        });
+        var client = new HttpClient(handler);
+        var options = Options.Create(new Mds3Options());
+        using var service = new HttpMds3MetadataService(client, options, NullLogger<HttpMds3MetadataService>.Instance);
+
+        var result = await service.GetMetadataAsync(targetAaguid);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Description.Should().Be("Unknown authenticator");
     }
 
     [Fact]

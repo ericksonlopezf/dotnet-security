@@ -288,7 +288,7 @@ public sealed class AzureKeyVaultKeyStore : IKeyStore, IDisposable
         }
     }
 
-    private static KeyMetadata ParseMetadataFromProperties(SecretProperties properties, KeyIdentifier? fallbackKeyId, KeyVersion? fallbackVersion)
+    internal static KeyMetadata ParseMetadataFromProperties(SecretProperties properties, KeyIdentifier? fallbackKeyId, KeyVersion? fallbackVersion)
     {
         properties.Tags.TryGetValue("KeyId", out var keyIdStr);
         properties.Tags.TryGetValue("Version", out var versionStr);

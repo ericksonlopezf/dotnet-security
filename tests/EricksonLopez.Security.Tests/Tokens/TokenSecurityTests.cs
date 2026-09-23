@@ -237,10 +237,16 @@ public sealed class TokenSecurityTests
 
         hasher.Dispose();
         Assert.True(hasher.IsDisposed);
+        Assert.All(hasher.PepperKey!, b => Assert.Equal(0, b));
 
         // Multiple dispose calls are idempotent and safe
         hasher.Dispose();
         Assert.True(hasher.IsDisposed);
+
+        // Disposing unpeppered hasher tests null pepper branch
+        var unpeppered = new HmacSha256TokenHasher();
+        unpeppered.Dispose();
+        Assert.True(unpeppered.IsDisposed);
 
         // Subsequent operations throw ObjectDisposedException
         Assert.Throws<ObjectDisposedException>(() => hasher.HashToken("sample-token"));

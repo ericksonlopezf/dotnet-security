@@ -4,6 +4,7 @@ namespace EricksonLopez.Security.Cryptography.XmlDSig.Tests;
 
 using System;
 using System.Security.Cryptography;
+using System.Text;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography.Xml;
 using System.Xml;
@@ -624,6 +625,22 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
     }
 
     [Fact]
+    public void VerifyXml_WithCustomTrustAnchors_WhenMatching_Succeeds()
+    {
+        var sampleXml = "<Doc Id=\"d1\"><Data>Sensitive</Data></Doc>";
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert);
+        signResult.IsSuccess.Should().BeTrue();
+
+        var options = new XmlVerificationOptions
+        {
+            CustomTrustAnchors = new List<X509Certificate2> { _cert }
+        };
+
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(signResult.Value, expectedCertificate: null, options: options);
+        verifyResult.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public void VerifyXml_WithRequireTrustedCertificate_WhenSelfSigned_ReturnsUntrustedCertificateError()
     {
         var sampleXml = "<Doc Id=\"d1\"><Data>Sensitive</Data></Doc>";
@@ -639,6 +656,7 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
         verifyResult.IsFailure.Should().BeTrue();
         verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.UntrustedCertificate");
         verifyResult.Error.Description.Should().Contain("The embedded certificate in KeyInfo is not trusted and does not chain to a trusted CA root.");
+        verifyResult.Error.Description.Should().Contain("To verify safely, provide the expected certificate, configure custom trust anchors, or specify a CertificateTrustEvaluator.");
     }
 
     [Fact]
@@ -804,6 +822,98 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("XmlDigitalSignatureService.ComputationFailed");
         result.Error.Description.Should().Contain("Failed to compute XML signature");
+    }
+
+    [Fact]
+    public void VerifyXml_SignatureWithoutReferences_ReturnsInvalidSignatureError()
+    {
+        var xmlWithoutRefs = @"<Doc><Signature xmlns=""http://www.w3.org/2000/09/xmldsig#""><SignedInfo><CanonicalizationMethod Algorithm=""http://www.w3.org/TR/2001/REC-xml-c14n-20010315""/><SignatureMethod Algorithm=""http://www.w3.org/2001/04/xmldsig-more#rsa-sha256""/></SignedInfo><SignatureValue>AA==</SignatureValue></Signature></Doc>";
+        var result = XmlDigitalSignatureService.Instance.VerifyXml(xmlWithoutRefs, _cert);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("XmlDigitalSignatureService.InvalidSignature");
+    }
+
+    [Theory]
+    [InlineData("valid_id-1.test", true)]
+    [InlineData("_underscoreValid", true)]
+    [InlineData("1startsWithDigit", false)]
+    [InlineData("id$withDollar", false)]
+    [InlineData("id withSpace", false)]
+    [InlineData("id#withHash", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsValidXmlId_ValidatesCorrectly(string? id, bool expected)
+    {
+        XmlDigitalSignatureService.IsValidXmlId(id!).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsValidXmlId_LengthBoundaries()
+    {
+        XmlDigitalSignatureService.IsValidXmlId(new string('a', 256)).Should().BeTrue();
+        XmlDigitalSignatureService.IsValidXmlId(new string('a', 257)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void FindElementByIdSafe_TargetNotFound_ReturnsNullWithoutThrowing()
+    {
+        var doc = new XmlDocument();
+        doc.LoadXml("<Root><Child Id=\"other\"/></Root>");
+        var found = XmlDigitalSignatureService.FindElementByIdSafe(doc, "missing");
+        found.Should().BeNull();
+    }
+
+    [Fact]
+    public void FindElementByIdSafe_MatchesId_id_and_ID_Attributes()
+    {
+        var doc1 = new XmlDocument();
+        doc1.LoadXml("<Root><Child Id=\"target1\"/></Root>");
+        XmlDigitalSignatureService.FindElementByIdSafe(doc1, "target1").Should().NotBeNull();
+
+        var doc2 = new XmlDocument();
+        doc2.LoadXml("<Root><Child id=\"target2\"/></Root>");
+        XmlDigitalSignatureService.FindElementByIdSafe(doc2, "target2").Should().NotBeNull();
+
+        var doc3 = new XmlDocument();
+        doc3.LoadXml("<Root><Child ID=\"target3\"/></Root>");
+        XmlDigitalSignatureService.FindElementByIdSafe(doc3, "target3").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void FindElementByIdSafe_TraversesMultipleChildNodes()
+    {
+        var doc = new XmlDocument();
+        doc.LoadXml("<Root><Child1/><Child2/><Child3 Id=\"foundMe\"/></Root>");
+        var found = XmlDigitalSignatureService.FindElementByIdSafe(doc, "foundMe");
+        found.Should().NotBeNull();
+        found!.GetAttribute("Id").Should().Be("foundMe");
+    }
+
+    [Fact]
+    public void FindElementByIdSafe_NestingDepthBoundaries()
+    {
+        // doc64: root N0 is depth 1, ..., N62 is depth 63, Target is depth 64 (valid boundary <= 64)
+        var xmlDepth64 = new StringBuilder();
+        for (int i = 0; i < 63; i++) xmlDepth64.Append($"<N{i}>");
+        xmlDepth64.Append("<Target Id=\"target\"/>");
+        for (int i = 62; i >= 0; i--) xmlDepth64.Append($"</N{i}>");
+
+        var doc64 = new XmlDocument();
+        doc64.LoadXml(xmlDepth64.ToString());
+        var found = XmlDigitalSignatureService.FindElementByIdSafe(doc64, "target");
+        found.Should().NotBeNull();
+
+        // doc65: root N0 is depth 1, ..., N63 is depth 64, Target is depth 65 (exceeds 64)
+        var xmlDepth65 = new StringBuilder();
+        for (int i = 0; i < 64; i++) xmlDepth65.Append($"<N{i}>");
+        xmlDepth65.Append("<Target Id=\"target\"/>");
+        for (int i = 63; i >= 0; i--) xmlDepth65.Append($"</N{i}>");
+
+        var doc65 = new XmlDocument();
+        doc65.LoadXml(xmlDepth65.ToString());
+        var act = () => XmlDigitalSignatureService.FindElementByIdSafe(doc65, "target");
+        act.Should().Throw<CryptographicException>()
+            .WithMessage("*maximum permitted nesting depth*");
     }
 }
 

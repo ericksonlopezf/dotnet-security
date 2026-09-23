@@ -3,9 +3,14 @@
 namespace EricksonLopez.Security.Tests.DependencyInjection;
 
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using EricksonLopez.Result;
 using EricksonLopez.Security.Abstractions.Cryptography;
 using EricksonLopez.Security.Abstractions.KeyManagement;
 using EricksonLopez.Security.Abstractions.Passwords;
+using EricksonLopez.Security.Abstractions.Primitives;
 using EricksonLopez.Security.Abstractions.Randomness;
 using EricksonLopez.Security.Abstractions.Secrets;
 using EricksonLopez.Security.Abstractions.Tokens;
@@ -177,5 +182,64 @@ public sealed class DependencyInjectionTests
 
         var ex = Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddEricksonLopezSecurity(null!));
         Assert.DoesNotContain("AddPasswordSecurity", ex.StackTrace);
+    }
+
+    [Fact]
+    public void AddTokenSecurity_WithEmptyPepperKey_RegistersUnpepperedHasher()
+    {
+        var services = new ServiceCollection();
+        services.AddTokenSecurity(Array.Empty<byte>());
+        using var provider = services.BuildServiceProvider();
+        var hasher = provider.GetRequiredService<ITokenHasher>();
+        Assert.NotNull(hasher);
+    }
+
+    [Fact]
+    public void AddDistributedKeyRevocationNotifier_ValidatesArguments_And_Registers()
+    {
+        var services = new ServiceCollection();
+        Func<KeyIdentifier, KeyVersion, KeyPurpose, CancellationToken, ValueTask> handler = (_, _, _, _) => ValueTask.CompletedTask;
+        Func<IServiceProvider, Func<KeyIdentifier, KeyVersion, KeyPurpose, CancellationToken, ValueTask>> factory = _ => handler;
+
+        Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(null!, handler));
+        Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(services, (Func<KeyIdentifier, KeyVersion, KeyPurpose, CancellationToken, ValueTask>)null!));
+        Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(null!, factory));
+        Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(services, (Func<IServiceProvider, Func<KeyIdentifier, KeyVersion, KeyPurpose, CancellationToken, ValueTask>>)null!));
+
+        services.AddDistributedKeyRevocationNotifier(handler);
+        var services2 = new ServiceCollection();
+        services2.AddDistributedKeyRevocationNotifier(factory);
+
+        using var p1 = services.BuildServiceProvider();
+        Assert.NotNull(p1.GetService<IKeyRevocationNotifier>());
+
+        using var p2 = services2.BuildServiceProvider();
+        Assert.NotNull(p2.GetService<IKeyRevocationNotifier>());
+    }
+
+    [Fact]
+    public void AddKeyManagement_DoesNotDisposeKeyStore_WhenLifecycleManagerDisposed()
+    {
+        var services = new ServiceCollection();
+        var store = new DisposableKeyStore();
+        services.AddSingleton<IKeyStore>(store);
+        services.AddKeyManagement();
+
+        using (var provider = services.BuildServiceProvider())
+        {
+            var manager = provider.GetRequiredService<IKeyLifecycleManager>();
+            ((IDisposable)manager).Dispose();
+            Assert.False(store.Disposed);
+        }
+    }
+
+    private sealed class DisposableKeyStore : IKeyStore, IDisposable
+    {
+        public bool Disposed { get; private set; }
+        public void Dispose() => Disposed = true;
+        public ValueTask<Result> SaveKeyAsync(CryptographicKey key, CancellationToken cancellationToken = default) => ValueTask.FromResult(Result.Success());
+        public ValueTask<Result<CryptographicKey>> GetKeyAsync(KeyIdentifier keyId, KeyVersion version, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public ValueTask<Result<IReadOnlyList<KeyMetadata>>> ListMetadataAsync(KeyPurpose? purpose = null, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public ValueTask<Result> UpdateStatusAsync(KeyIdentifier keyId, KeyVersion version, KeyStatus newStatus, CancellationToken cancellationToken = default) => ValueTask.FromResult(Result.Success());
     }
 }

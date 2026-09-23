@@ -238,24 +238,6 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
             var signedXml = new SignedXml(document);
             signedXml.LoadXml(sigElem);
 
-            if (signedXml.SignedInfo?.References is not null && opt.AllowedTransformAlgorithms is not null)
-            {
-                foreach (Reference refItem in signedXml.SignedInfo.References)
-                {
-                    if (refItem.TransformChain is not null)
-                    {
-                        foreach (Transform transform in refItem.TransformChain)
-                        {
-                            if (transform.Algorithm is null || !opt.AllowedTransformAlgorithms.Contains(transform.Algorithm))
-                            {
-                                return Error.Validation(
-                                    "XmlDigitalSignatureService.DisallowedTransform",
-                                    $"XML transform algorithm '{transform.Algorithm}' is not permitted by verification policy.");
-                            }
-                        }
-                    }
-                }
-            }
 
             bool isValid;
             X509Certificate2? verifiedCert = expectedCertificate;
@@ -379,7 +361,7 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
         }
     }
 
-    private static bool IsValidXmlId(string id)
+    internal static bool IsValidXmlId(string id)
     {
         if (string.IsNullOrEmpty(id) || id.Length > 256)
         {
@@ -403,9 +385,9 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
         return true;
     }
 
-    private const int MaxXmlNestingDepth = 64;
+    internal const int MaxXmlNestingDepth = 64;
 
-    private static XmlElement? FindElementByIdSafe(XmlNode parent, string targetId)
+    internal static XmlElement? FindElementByIdSafe(XmlNode parent, string targetId)
     {
         var stack = new Stack<(XmlNode Node, int Depth)>();
         stack.Push((parent, 0));

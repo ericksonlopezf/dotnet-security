@@ -356,6 +356,7 @@ public sealed class AttestationVerifierTests
     {
         var verifier = new AndroidSafetyNetAttestationVerifier();
         verifier.Format.Should().Be("android-safetynet");
+        AndroidSafetyNetAttestationVerifier.StrictUtf8.GetPreamble().Should().BeEmpty();
 
         using var rsa = RSA.Create(2048);
         var certReq = new CertificateRequest("CN=attest.android.com", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);

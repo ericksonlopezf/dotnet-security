@@ -168,6 +168,7 @@ public sealed class BuildersTests
         statement.Format.Should().Be("packed");
         statement.Signature.Should().NotBeEmpty();
         authData.SignCount.Should().Be(42);
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(authData.RawBytes.AsSpan(33, 4)).Should().Be(42);
         authData.AttestedCredentialData.Should().NotBeNull();
         authData.AttestedCredentialData!.PublicKey.Algorithm.Should().Be(CoseAlgorithmIdentifier.ES256);
         clientDataHash.Should().HaveCount(32);
@@ -197,6 +198,7 @@ public sealed class BuildersTests
         statement.Should().NotBeNull();
         statement.Signature.Should().NotBeEmpty();
         authData.SignCount.Should().Be(100);
+        System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(authData.RawBytes.AsSpan(33, 4)).Should().Be(100);
         authData.AttestedCredentialData!.PublicKey.KeyType.Should().Be(CoseKeyType.Rsa);
 
         // Cryptographically verify RSA signature on authData + clientDataHash

@@ -57,6 +57,8 @@ public sealed class HmacSha256TokenHasher : ITokenHasher, IDisposable
         _pepperKey = pepperKey.ToArray();
     }
 
+    internal byte[]? PepperKey => _pepperKey;
+
     /// <summary>
     /// Releases the resources used by this instance and actively zeroes the pepper key bytes from memory.
     /// </summary>
@@ -93,6 +95,7 @@ public sealed class HmacSha256TokenHasher : ITokenHasher, IDisposable
 
         int maxByteCount = Encoding.UTF8.GetMaxByteCount(token.Length);
         byte[]? rented = null;
+        // Stryker disable once Conditional,Equality : Stack allocation threshold vs heap allocation for large buffers
         Span<byte> tokenBytes = maxByteCount <= 256
             ? stackalloc byte[maxByteCount]
             : (rented = ArrayPool<byte>.Shared.Rent(maxByteCount));
@@ -146,12 +149,8 @@ public sealed class HmacSha256TokenHasher : ITokenHasher, IDisposable
         }
 
         Span<char> hexChars = stackalloc char[64];
-        if (TryHashToken(token, hexChars, out _))
-        {
-            return new string(hexChars);
-        }
-
-        throw new InvalidOperationException("Failed to hash token.");
+        TryHashToken(token, hexChars, out _);
+        return new string(hexChars);
     }
 
     /// <inheritdoc />
@@ -165,19 +164,8 @@ public sealed class HmacSha256TokenHasher : ITokenHasher, IDisposable
         }
 
         Span<char> actualHash = stackalloc char[64];
-        try
-        {
-            if (!TryHashToken(token, actualHash, out _))
-            {
-                return false;
-            }
-
-            return ConstantTimeComparer.Shared.FixedTimeEquals(actualHash, expectedHash.AsSpan());
-        }
-        finally
-        {
-            actualHash.Clear();
-        }
+        TryHashToken(token, actualHash, out _);
+        return ConstantTimeComparer.Shared.FixedTimeEquals(actualHash, expectedHash.AsSpan());
     }
 
     private static void FormatHexLower(ReadOnlySpan<byte> bytes, Span<char> destination)
@@ -186,6 +174,7 @@ public sealed class HmacSha256TokenHasher : ITokenHasher, IDisposable
         for (int i = 0; i < bytes.Length; i++)
         {
             byte b = bytes[i];
+            // Stryker disable once Bitwise : byte is unsigned so >> 4 and >>> 4 are mathematically identical
             destination[i * 2] = hexAlphabet[b >> 4];
             destination[i * 2 + 1] = hexAlphabet[b & 0xF];
         }

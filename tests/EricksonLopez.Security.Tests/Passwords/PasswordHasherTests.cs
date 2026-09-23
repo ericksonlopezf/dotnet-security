@@ -802,4 +802,61 @@ public sealed class PasswordHasherTests
         var fallbackResult = composite.VerifyPassword("SpoofedPass", spoofedArgonHash);
         Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, fallbackResult);
     }
+
+    [Fact]
+    public void PasswordHasher_ComprehensiveBoundaries_And_EdgeCases()
+    {
+        // 1. Argon2id properties & NeedsRehash missing params
+        Assert.True(Argon2idPasswordHasher.IsMemoryHard);
+        Assert.Equal("Argon2id (RFC 9106)", Argon2idPasswordHasher.SubstrateDescription);
+
+        var argon1 = new Argon2idPasswordHasher(iterations: 1, memorySizeKb: 65536, parallelism: 4);
+        Assert.True(argon1.NeedsRehash("invalid"));
+        Assert.True(argon1.NeedsRehash("$argon2id$v=19$m=65536,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo")); // missing t=
+        Assert.True(argon1.NeedsRehash("$argon2id$v=19$t=1,p=4$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo")); // missing m=
+        Assert.True(argon1.NeedsRehash("$argon2id$v=19$t=1,m=65536$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo")); // missing p=
+
+        // 2. Pbkdf2PasswordHasher NeedsRehash with PBKDF2.V1
+        var pbkdf2 = new Pbkdf2PasswordHasher(iterations: 10_000);
+        Assert.True(pbkdf2.NeedsRehash("PBKDF2.V1$1000$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo"));
+        Assert.False(pbkdf2.NeedsRehash("PBKDF2.V1$10000$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo"));
+        Assert.False(pbkdf2.NeedsRehash("PBKDF2.V1$20000$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo"));
+        Assert.True(pbkdf2.NeedsRehash("PBKDF2.V1$malformed"));
+        Assert.True(pbkdf2.NeedsRehash("PBKDF2.V1$notanumber$c2FsdHNhbHQ$aGFzaGhhc2hoYXNo"));
+
+        // 3. CompositePasswordHasher PBKDF2.V1 boundary tests
+        var composite = new CompositePasswordHasher(primaryHasher: pbkdf2);
+
+        // ExpectedHash exact boundaries (16 bytes and 128 bytes)
+        byte[] salt64 = new byte[48]; // base64 len 64
+        string salt64Str = Convert.ToBase64String(salt64);
+
+        // 16 bytes hash (boundary min)
+        byte[] derived16 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("p", salt64, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 16);
+        string hash16Str = Convert.ToBase64String(derived16);
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, composite.VerifyPassword("p", $"PBKDF2.V1$1000${salt64Str}${hash16Str}"));
+
+        // 15 bytes hash (invalid)
+        byte[] derived15 = new byte[15];
+        string hash15Str = Convert.ToBase64String(derived15);
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000${salt64Str}${hash15Str}"));
+
+        // 64 bytes hash (boundary max)
+        byte[] derived64 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("p", salt64, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        string hash64Str = Convert.ToBase64String(derived64);
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, composite.VerifyPassword("p", $"PBKDF2.V1$1000${salt64Str}${hash64Str}"));
+
+        // 65 bytes hash (invalid)
+        byte[] derived65 = new byte[65];
+        string hash65Str = Convert.ToBase64String(derived65);
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000${salt64Str}${hash65Str}"));
+
+        // 600,000 iterations (boundary max)
+        byte[] derived600k = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("p", salt64, 600_000, System.Security.Cryptography.HashAlgorithmName.SHA512, 16);
+        string hash600kStr = Convert.ToBase64String(derived600k);
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, composite.VerifyPassword("p", $"PBKDF2.V1$600000${salt64Str}${hash600kStr}"));
+
+        // Invalid base64 in PBKDF2.V1 (FormatException catch branch)
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", "PBKDF2.V1$1000$notbase64!$notbase64!"));
+    }
 }

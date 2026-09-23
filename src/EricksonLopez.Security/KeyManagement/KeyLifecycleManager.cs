@@ -27,6 +27,7 @@ public sealed class KeyLifecycleManager : IKeyLifecycleManager, IDisposable
     private readonly bool _failOnAuditFailure;
     private readonly IKeyRevocationNotifier? _revocationNotifier;
     private readonly ConcurrentDictionary<KeyPurpose, SemaphoreSlim> _purposeSemaphores = new();
+    internal int PurposeSemaphoresCount => _purposeSemaphores.Count;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KeyLifecycleManager"/> class.
@@ -87,18 +88,10 @@ public sealed class KeyLifecycleManager : IKeyLifecycleManager, IDisposable
             // KM-006 (resolved): always derive the new version from the highest existing version for this
             // purpose so that re-generating after a revocation does not collide with KeyVersion.Initial.
             var allKeysResult = await _keyStore.ListMetadataAsync(purpose, cancellationToken).ConfigureAwait(false);
-            KeyVersion version;
-            if (allKeysResult.IsSuccess && allKeysResult.Value.Count > 0)
-            {
-                var highest = allKeysResult.Value
-                    .Where(k => k.Purpose == purpose)
-                    .MaxBy(k => k.Version.Value);
-                version = highest is not null ? highest.Version.Next() : KeyVersion.Initial;
-            }
-            else
-            {
-                version = KeyVersion.Initial;
-            }
+            var highest = allKeysResult.IsSuccess
+                ? allKeysResult.Value.Where(k => k.Purpose == purpose).MaxBy(k => k.Version.Value)
+                : null;
+            var version = highest is not null ? highest.Version.Next() : KeyVersion.Initial;
 
             var metadata = new KeyMetadata(
                 KeyId: keyId,
@@ -202,20 +195,17 @@ public sealed class KeyLifecycleManager : IKeyLifecycleManager, IDisposable
             // would leave stale Active keys that could be returned by GetActiveKeyAsync under load.
             // We retire all active keys atomically before activating the new one. If any retirement fails,
             // the new key is rolled back to Revoked to prevent split-brain dual-active state.
-            if (activeKeys.Count > 0)
+            foreach (var activeKey in activeKeys)
             {
-                foreach (var activeKey in activeKeys)
-                {
-                    var updateStatusResult = await _keyStore.UpdateStatusAsync(
-                        activeKey.KeyId, activeKey.Version, KeyStatus.Retired, cancellationToken).ConfigureAwait(false);
+                var updateStatusResult = await _keyStore.UpdateStatusAsync(
+                    activeKey.KeyId, activeKey.Version, KeyStatus.Retired, cancellationToken).ConfigureAwait(false);
 
-                    if (updateStatusResult.IsFailure)
-                    {
-                        // SEC-008: Transactional rollback — revoke the new key so no dual-active state persists.
-                        await _keyStore.UpdateStatusAsync(keyId, newVersion, KeyStatus.Revoked, cancellationToken).ConfigureAwait(false);
-                        newKey.Dispose();
-                        return updateStatusResult.Error;
-                    }
+                if (updateStatusResult.IsFailure)
+                {
+                    // SEC-008: Transactional rollback — revoke the new key so no dual-active state persists.
+                    await _keyStore.UpdateStatusAsync(keyId, newVersion, KeyStatus.Revoked, cancellationToken).ConfigureAwait(false);
+                    newKey.Dispose();
+                    return updateStatusResult.Error;
                 }
             }
 
@@ -232,12 +222,9 @@ public sealed class KeyLifecycleManager : IKeyLifecycleManager, IDisposable
                     // FINDING-NEW-07 + KLM-03: Transactional rollback on audit publication failure.
                     // Restore ALL previously active keys (not just the highest-version one) to Active,
                     // consistent with the retire-all semantics introduced by KLM-03.
-                    if (activeKeys.Count > 0)
+                    foreach (var activeKey in activeKeys)
                     {
-                        foreach (var activeKey in activeKeys)
-                        {
-                            await _keyStore.UpdateStatusAsync(activeKey.KeyId, activeKey.Version, KeyStatus.Active, cancellationToken).ConfigureAwait(false);
-                        }
+                        await _keyStore.UpdateStatusAsync(activeKey.KeyId, activeKey.Version, KeyStatus.Active, cancellationToken).ConfigureAwait(false);
                     }
 
                     await _keyStore.UpdateStatusAsync(keyId, newVersion, KeyStatus.Revoked, cancellationToken).ConfigureAwait(false);

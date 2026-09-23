@@ -572,9 +572,9 @@ public sealed class AzureKeyVaultAdaptersTests
         capturedSecret.Properties.Tags["Purpose"].Should().Be("Encryption");
         capturedSecret.Properties.Tags["Status"].Should().Be("Active");
         capturedSecret.Properties.Tags["AlgorithmId"].Should().Be("AES-256-GCM");
-        capturedSecret.Properties.Tags["CreatedAtUtc"].Should().NotBeNullOrWhiteSpace();
-        capturedSecret.Properties.Tags["ExpiresAtUtc"].Should().NotBeNullOrWhiteSpace();
-        capturedSecret.Properties.Tags["RevokedAtUtc"].Should().NotBeNullOrWhiteSpace();
+        capturedSecret.Properties.Tags["CreatedAtUtc"].Should().Contain("T").And.Contain("+00:00");
+        capturedSecret.Properties.Tags["ExpiresAtUtc"].Should().Contain("T").And.Contain("+00:00");
+        capturedSecret.Properties.Tags["RevokedAtUtc"].Should().Contain("T").And.Contain("+00:00");
         capturedSecret.Properties.Enabled.Should().BeTrue();
         capturedSecret.Properties.ExpiresOn.Should().Be(now.AddDays(10));
 
@@ -638,9 +638,11 @@ public sealed class AzureKeyVaultAdaptersTests
         secretClient.GetSecretAsync(Arg.Is<string>(s => s.Contains("missing")), Arg.Is<string?>(v => v == null), Arg.Any<CancellationToken>())
             .Throws(new RequestFailedException(404, "Not found"));
 
-        var notFoundResult = await store.GetKeyAsync(KeyIdentifier.Prefixed("missing"), version);
+        var missingId = KeyIdentifier.Prefixed("missing");
+        var notFoundResult = await store.GetKeyAsync(missingId, version);
         notFoundResult.IsFailure.Should().BeTrue();
         notFoundResult.Error.Code.Should().Be("Security.KeyNotFound");
+        notFoundResult.Error.Description.Should().Contain($"{missingId}:{version}");
 
         // 400 Bad Request
         secretClient.GetSecretAsync(Arg.Is<string>(s => s.Contains("bad")), Arg.Is<string?>(v => v == null), Arg.Any<CancellationToken>())
@@ -683,7 +685,15 @@ public sealed class AzureKeyVaultAdaptersTests
         p4.Enabled = true;
         p4.Tags["Other"] = "value";
 
-        var page = Page<SecretProperties>.FromValues(new[] { p1, p2, p3, p4 }, null, Substitute.For<Response>());
+        var p5OnlyKeyId = SecretModelFactory.SecretProperties(name: "keyIdOnly");
+        p5OnlyKeyId.Enabled = true;
+        p5OnlyKeyId.Tags["KeyId"] = "k1";
+
+        var p6OnlyVersion = SecretModelFactory.SecretProperties(name: "versionOnly");
+        p6OnlyVersion.Enabled = true;
+        p6OnlyVersion.Tags["Version"] = "4";
+
+        var page = Page<SecretProperties>.FromValues(new[] { p1, p2, p3, p4, p5OnlyKeyId, p6OnlyVersion }, null, Substitute.For<Response>());
         var asyncPageable = AsyncPageable<SecretProperties>.FromPages(new[] { page });
 
         secretClient.GetPropertiesOfSecretsAsync(Arg.Any<CancellationToken>())
@@ -747,6 +757,7 @@ public sealed class AzureKeyVaultAdaptersTests
         updatedProps.Should().NotBeNull();
         updatedProps!.Tags["Status"].Should().Be("Revoked");
         updatedProps.Tags.ContainsKey("RevokedAtUtc").Should().BeTrue();
+        updatedProps.Tags["RevokedAtUtc"].Should().Contain("T").And.Contain("+00:00");
         updatedProps.Enabled.Should().BeFalse();
 
         // Active
@@ -761,9 +772,11 @@ public sealed class AzureKeyVaultAdaptersTests
         secretClient.GetSecretAsync(Arg.Is<string>(s => s.Contains("missing")), Arg.Is<string?>(v => v == null), Arg.Any<CancellationToken>())
             .Throws(new RequestFailedException(404, "Not found"));
 
-        var notFound = await store.UpdateStatusAsync(KeyIdentifier.Prefixed("missing"), version, KeyStatus.Retired);
+        var missingId = KeyIdentifier.Prefixed("missing");
+        var notFound = await store.UpdateStatusAsync(missingId, version, KeyStatus.Retired);
         notFound.IsFailure.Should().BeTrue();
         notFound.Error.Code.Should().Be("Security.KeyNotFound");
+        notFound.Error.Description.Should().Contain($"{missingId}:{version}");
 
         // Update error
         secretClient.UpdateSecretPropertiesAsync(Arg.Any<SecretProperties>(), Arg.Any<CancellationToken>())

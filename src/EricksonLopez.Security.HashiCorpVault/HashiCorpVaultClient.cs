@@ -76,7 +76,7 @@ internal sealed class HashiCorpVaultClient : IDisposable
         return content;
     }
 
-    private static byte[] SerializeAppRoleLogin(string roleId, string secretId)
+    internal static byte[] SerializeAppRoleLogin(string roleId, string secretId)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -89,7 +89,7 @@ internal sealed class HashiCorpVaultClient : IDisposable
         return buffer.WrittenMemory.ToArray();
     }
 
-    private static byte[] SerializeKvSecretWrite(string secretValue)
+    internal static byte[] SerializeKvSecretWrite(string secretValue)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -103,7 +103,7 @@ internal sealed class HashiCorpVaultClient : IDisposable
         return buffer.WrittenMemory.ToArray();
     }
 
-    private static byte[] SerializeKeyDataWrite(KeyIdentifier keyId, KeyVersion version, KeyMetadata metadata, byte[] keyBytes)
+    internal static byte[] SerializeKeyDataWrite(KeyIdentifier keyId, KeyVersion version, KeyMetadata metadata, byte[] keyBytes)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))

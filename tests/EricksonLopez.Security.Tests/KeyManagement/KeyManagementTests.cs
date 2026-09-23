@@ -30,6 +30,7 @@ public sealed class KeyManagementTests
         public bool FailGet { get; set; } = true;
         public bool FailList { get; set; } = true;
         public bool FailUpdate { get; set; } = true;
+        public IReadOnlyList<KeyMetadata> ListResult { get; set; } = new List<KeyMetadata>();
         public CryptographicKey? LastSavedKey { get; private set; }
 
         public ValueTask<Result> SaveKeyAsync(CryptographicKey key, CancellationToken cancellationToken = default)
@@ -42,7 +43,7 @@ public sealed class KeyManagementTests
             FailGet ? ValueTask.FromResult<Result<CryptographicKey>>(SecurityError.KeyNotFound("store get fail")) : ValueTask.FromResult<Result<CryptographicKey>>(new CryptographicKey(new KeyMetadata(keyId, version, KeyPurpose.Signing, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow), SecretBuffer.CreateRandom(32)));
 
         public ValueTask<Result<IReadOnlyList<KeyMetadata>>> ListMetadataAsync(KeyPurpose? purpose = null, CancellationToken cancellationToken = default) =>
-            FailList ? ValueTask.FromResult<Result<IReadOnlyList<KeyMetadata>>>(SecurityError.KeyNotFound("store list fail")) : ValueTask.FromResult<Result<IReadOnlyList<KeyMetadata>>>(new List<KeyMetadata>());
+            FailList ? ValueTask.FromResult<Result<IReadOnlyList<KeyMetadata>>>(SecurityError.KeyNotFound("store list fail")) : ValueTask.FromResult(Result<IReadOnlyList<KeyMetadata>>.Success(ListResult));
 
         public ValueTask<Result> UpdateStatusAsync(KeyIdentifier keyId, KeyVersion version, KeyStatus newStatus, CancellationToken cancellationToken = default) =>
             FailUpdate ? ValueTask.FromResult<Result>(SecurityError.KeyNotFound("store update fail")) : ValueTask.FromResult(Result.Success());
@@ -1026,5 +1027,181 @@ public sealed class KeyManagementTests
 
         // ClearCache
         ring.ClearCache();
+    }
+
+    [Fact]
+    public async Task KeyRing_SynchronousMethods_CacheHit_EvaluatesCorrectly()
+    {
+        var store = new InMemoryKeyStore();
+        var keyId = KeyIdentifier.New();
+        var meta = new KeyMetadata(keyId, KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        using var buf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(meta, buf));
+
+        var ring = new KeyRing(store);
+
+        // Cold cache miss -> warms up cache
+        var warmActive = await ring.GetActiveKeyAsync(KeyPurpose.Encryption);
+        warmActive.IsSuccess.Should().BeTrue();
+        using (warmActive.Value) { }
+
+        // Synchronous GetActiveKey -> Cache hit!
+        var syncActive = ring.GetActiveKey(KeyPurpose.Encryption);
+        syncActive.IsSuccess.Should().BeTrue();
+        using (syncActive.Value) { }
+
+        // Synchronous GetKey -> Cache hit!
+        var syncKey = ring.GetKey(keyId, KeyVersion.Initial);
+        syncKey.IsSuccess.Should().BeTrue();
+        using (syncKey.Value) { }
+
+        // Cache hit on revoked key
+        var revokedMeta = meta with { Status = KeyStatus.Revoked };
+        var revokedId = new KeyIdentifier("revoked-key");
+        using var rbuf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(revokedMeta with { KeyId = revokedId }, rbuf));
+        var warmRevoked = await ring.GetKeyAsync(revokedId, KeyVersion.Initial);
+        warmRevoked.IsFailure.Should().BeTrue();
+        warmRevoked.Error.Code.Should().Be("Security.KeyRevoked");
+        warmRevoked.Error.Description.Should().Contain("is not usable because its status is 'Revoked'");
+
+        ring.Dispose();
+        ring.PurposeSemaphoresCount.Should().Be(0);
+        ring.KeyCacheCount.Should().Be(0);
+        ring.ActiveKeyCacheCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task KeyRing_Pruning_WithSmallCapacity_EvictsOldestKeys()
+    {
+        var store = new InMemoryKeyStore();
+        var ring = new KeyRing(store) { MaxCacheCapacity = 5 };
+
+        for (int i = 0; i < 6; i++)
+        {
+            var id = new KeyIdentifier($"k_{i}");
+            var meta = new KeyMetadata(id, KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+            using var buf = SecretBuffer.CreateRandom(32);
+            await store.SaveKeyAsync(new CryptographicKey(meta, buf));
+            var res = await ring.GetKeyAsync(id, KeyVersion.Initial);
+            res.IsSuccess.Should().BeTrue();
+            using (res.Value) { }
+        }
+
+        // Cache had capacity 5, 6th key triggered prune
+        ring.KeyCacheCount.Should().BeLessThanOrEqualTo(5);
+    }
+
+    [Fact]
+    public async Task KeyRing_InvalidateKey_RemovesMatchingActiveKeyOnly()
+    {
+        var store = new InMemoryKeyStore();
+        var keyId1 = new KeyIdentifier("k1");
+        var meta1 = new KeyMetadata(keyId1, KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        using var buf1 = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(meta1, buf1));
+
+        var ring = new KeyRing(store, new KeyRingOptions { CacheTtl = TimeSpan.FromMinutes(5) });
+        var activeRes = await ring.GetActiveKeyAsync(KeyPurpose.Encryption);
+        activeRes.IsSuccess.Should().BeTrue();
+        using (activeRes.Value) { }
+        ring.ActiveKeyCacheCount.Should().Be(1);
+
+        // Different key id, same version -> should NOT invalidate active key
+        ring.InvalidateKey(new KeyIdentifier("other"), KeyVersion.Initial);
+        ring.ActiveKeyCacheCount.Should().Be(1);
+
+        // Same key id, different version -> should NOT invalidate active key
+        ring.InvalidateKey(keyId1, KeyVersion.Initial.Next());
+        ring.ActiveKeyCacheCount.Should().Be(1);
+
+        // Same key id, same version -> DOES invalidate active key
+        ring.InvalidateKey(keyId1, KeyVersion.Initial);
+        ring.ActiveKeyCacheCount.Should().Be(0);
+
+        ring.Dispose();
+    }
+
+    [Fact]
+    public async Task InMemoryKeyStore_MaxRetriesExhaustion_ReturnsFailure()
+    {
+        var store = new InMemoryKeyStore { MaxRetries = 0 };
+        var id = KeyIdentifier.New();
+        var meta = new KeyMetadata(id, KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+        using var buf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(meta, buf));
+
+        var res = await store.UpdateStatusAsync(id, KeyVersion.Initial, KeyStatus.Retired);
+        res.IsFailure.Should().BeTrue();
+        res.Error.Code.Should().Be("InMemoryKeyStore.UpdateStatusFailed");
+        res.Error.Description.Should().Be($"Failed to update status for key '{id}:{KeyVersion.Initial}' after 0 attempts due to concurrent modification.");
+    }
+
+    [Fact]
+    public void InMemoryKeyStore_CapacityExceeded_ReturnsDetailedDescription()
+    {
+        var err = SecurityError.StoreCapacityExceeded(
+            $"InMemoryKeyStore capacity exceeded ({InMemoryKeyStore.MaxKeys} keys). " +
+            "This store is intended for testing and development only. " +
+            "For production use, configure a persistent cloud key store.");
+        err.Description.Should().Contain("10000 keys");
+        err.Description.Should().Contain("intended for testing and development only");
+    }
+
+    [Fact]
+    public async Task KeyLifecycleManager_Dispose_CleansUpSemaphores()
+    {
+        var store = new InMemoryKeyStore();
+        var manager = new KeyLifecycleManager(store);
+        var gen = await manager.GenerateAndActivateKeyAsync(KeyPurpose.Encryption);
+        gen.IsSuccess.Should().BeTrue();
+        using (gen.Value) { }
+        manager.PurposeSemaphoresCount.Should().BeGreaterThan(0);
+
+        manager.Dispose();
+        manager.PurposeSemaphoresCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task KeyLifecycleManager_GenerateKeyAsync_StoreWithDifferentPurpose_DerivesInitialVersion()
+    {
+        var store = new InMemoryKeyStore();
+        var otherMeta = new KeyMetadata(KeyIdentifier.New(), new KeyVersion(10), KeyPurpose.Signing, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+        using var buf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(otherMeta, buf));
+
+        var manager = new KeyLifecycleManager(store);
+        var res = await manager.GenerateAndActivateKeyAsync(KeyPurpose.Encryption);
+        res.IsSuccess.Should().BeTrue();
+        res.Value.Metadata.Version.Should().Be(KeyVersion.Initial);
+        using (res.Value) { }
+    }
+
+    [Fact]
+    public async Task KeyLifecycleManager_RotateKeyAsync_RetireFailure_DisposesNewKey()
+    {
+        var activeMeta = new KeyMetadata(new KeyIdentifier("k1"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        var store = new FailingKeyStore
+        {
+            FailList = false,
+            ListResult = [activeMeta],
+            FailSave = false,
+            FailUpdate = true
+        };
+
+        var manager = new KeyLifecycleManager(store);
+        var rotateRes = await manager.RotateKeyAsync(KeyPurpose.Encryption);
+        rotateRes.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void InProcessKeyRevocationNotifier_CanceledToken_ReturnsCanceledTask()
+    {
+        var notifier = new InProcessKeyRevocationNotifier();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var vt = notifier.NotifyRevokedAsync(new KeyIdentifier("k"), KeyVersion.Initial, KeyPurpose.Encryption, cts.Token);
+        vt.IsCanceled.Should().BeTrue();
     }
 }

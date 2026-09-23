@@ -42,10 +42,12 @@ public sealed class ChaCha20Poly1305EncryptionEngine : IAuthenticatedEncryptionE
     /// <inheritdoc />
     public int TagSizeBytes => ExpectedTagBytes;
 
+    internal static bool? s_isSupportedOverride;
+
     /// <summary>
     /// Gets a value indicating whether ChaCha20-Poly1305 is supported on the current platform.
     /// </summary>
-    public static bool IsSupported => ChaCha20Poly1305.IsSupported;
+    public static bool IsSupported => s_isSupportedOverride ?? ChaCha20Poly1305.IsSupported;
 
     /// <inheritdoc />
     public Result<EncryptedData> Encrypt(

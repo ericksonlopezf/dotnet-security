@@ -88,6 +88,7 @@ public sealed class CryptographicRandom : ICryptographicRandomNumberGenerator
             throw new ArgumentOutOfRangeException(nameof(byteLength), byteLength, "Byte length must be greater than zero.");
         }
 
+        // Stryker disable once Conditional,Equality : Stack allocation threshold vs heap allocation for large buffers
         Span<byte> randomBytes = byteLength <= 256 ? stackalloc byte[byteLength] : new byte[byteLength];
         RandomNumberGenerator.Fill(randomBytes);
 

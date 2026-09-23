@@ -49,7 +49,7 @@ public sealed class InMemoryTotpReplayStoreTests
     [Fact]
     public void TryAdd_AtMaxCapacity_WhenExpiredPresent_PrunesAndAcceptsNew()
     {
-        var store = new InMemoryTotpReplayStore(maxCapacity: 2, pruneThreshold: 1);
+        var store = new InMemoryTotpReplayStore(maxCapacity: 2, pruneThreshold: 10);
         var expired = DateTimeOffset.UtcNow.AddMinutes(-5);
         var unexpired = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -169,5 +169,22 @@ public sealed class InMemoryTotpReplayStoreTests
         store.ConsumedCodes.ContainsKey("key-exact").Should().BeTrue();
         // key-strictly-past expiresAt < now -> pruned
         store.ConsumedCodes.ContainsKey("key-strictly-past").Should().BeFalse();
+    }
+
+    [Fact]
+    public void PruneExpiredCodes_ExactlyAtOneSecondBoundary_ThrottleExpiresAndPrunes()
+    {
+        var store = new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: 5);
+        var now = DateTimeOffset.UtcNow;
+
+        // Initial prune sets lastTicks to now
+        store.PruneExpiredCodes(now);
+
+        store.TryAdd("key-exp", now.AddSeconds(-10)).Should().BeTrue();
+
+        // Exactly at 1 second boundary (nowTicks - lastTicks == TimeSpan.FromSeconds(1).Ticks)
+        // With <, condition is false, throttle expires, and prune runs!
+        store.PruneExpiredCodes(now.Add(TimeSpan.FromSeconds(1)));
+        store.ConsumedCodes.ContainsKey("key-exp").Should().BeFalse();
     }
 }

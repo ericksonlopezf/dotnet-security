@@ -140,4 +140,17 @@ public sealed class AbacPolicyEngineFailClosedTests
         openResult.Status.Should().NotBe(closedResult.Status,
             because: "this proves the behavioral difference that prevents the SEC-003 authorization bypass");
     }
+
+    [Fact]
+    public void EvaluateFailClosed_NullArguments_ThrowsArgumentNullException()
+    {
+        var context = new AbacContext();
+        var policies = new List<AbacPolicy>();
+
+        var actNullContext = () => AbacPolicyEngine.Instance.EvaluateFailClosed(null!, policies);
+        var actNullPolicies = () => AbacPolicyEngine.Instance.EvaluateFailClosed(context, null!);
+
+        actNullContext.Should().Throw<ArgumentNullException>().WithParameterName("context");
+        actNullPolicies.Should().Throw<ArgumentNullException>().WithParameterName("policies");
+    }
 }

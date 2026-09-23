@@ -496,4 +496,31 @@ public sealed class BinarySecurityEnvelopeSerializerTests
         Assert.True(resMaxCipher.IsSuccess);
         Assert.Equal(BinarySecurityEnvelopeSerializer.MaxCiphertextPayloadBytes, resMaxCipher.Value.Ciphertext.Length);
     }
+
+    [Fact]
+    public void BinarySerializer_Deserialize_WithUnconsumedTrailingBytes_ReturnsInvalidCiphertextError()
+    {
+        var serializer = BinarySecurityEnvelopeSerializer.Shared;
+        var envelope = new SecurityEnvelope(
+            FormatVersion: 1,
+            Algorithm: AeadAlgorithm.Aes256Gcm,
+            KeyId: KeyIdentifier.New(),
+            KeyVersion: KeyVersion.Initial,
+            Nonce: new byte[12],
+            Tag: new byte[16],
+            Ciphertext: new byte[4],
+            AssociatedData: new byte[4]);
+
+        byte[] serialized = serializer.Serialize(envelope);
+        byte[] withTrailing = new byte[serialized.Length + 3];
+        serialized.CopyTo(withTrailing, 0);
+        withTrailing[^3] = 99;
+        withTrailing[^2] = 98;
+        withTrailing[^1] = 97;
+
+        var res = serializer.Deserialize(withTrailing);
+        Assert.True(res.IsFailure);
+        Assert.Equal("Security.InvalidCiphertext", res.Error.Code);
+        Assert.Equal("Malformed envelope: Payload contains 3 unconsumed trailing bytes.", res.Error.Description);
+    }
 }

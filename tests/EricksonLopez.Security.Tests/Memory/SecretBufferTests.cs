@@ -197,5 +197,26 @@ public sealed class SecretBufferTests
         buffer.Length.Should().Be(18);
         System.Text.Encoding.UTF8.GetString(buffer.Span).Should().Be("SensitiveSecret123");
     }
+
+    [Fact]
+    public void SecretBuffer_DisposeCore_FinalizerSimulation_DoesNotReturnToPool()
+    {
+        var buffer = SecretBuffer.CreateRandom(16);
+        buffer.DisposeCore(fromFinalizer: true);
+        buffer.IsDisposed.Should().BeTrue();
+
+        // Calling DisposeCore again when already disposed is a no-op
+        buffer.DisposeCore(fromFinalizer: false);
+        buffer.IsDisposed.Should().BeTrue();
+
+        Action actSpan = () => _ = buffer.Span;
+        actSpan.Should().Throw<ObjectDisposedException>();
+
+        Action actWritable = () => _ = buffer.GetWritableSpan();
+        actWritable.Should().Throw<ObjectDisposedException>();
+
+        Action actEquals = () => buffer.FixedTimeEquals(new byte[16]);
+        actEquals.Should().Throw<ObjectDisposedException>();
+    }
 }
 

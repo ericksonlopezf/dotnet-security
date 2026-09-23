@@ -66,8 +66,7 @@ public sealed class ConstantTimeComparer : IConstantTimeComparer
         if (left.Length != right.Length)
         {
             Span<byte> dummy = stackalloc byte[1];
-            CryptographicOperations.FixedTimeEquals(dummy, dummy);
-            return false;
+            return CryptographicOperations.FixedTimeEquals(dummy, dummy) && false;
         }
 
         return CryptographicOperations.FixedTimeEquals(MemoryMarshal.AsBytes(left), MemoryMarshal.AsBytes(right));
@@ -80,8 +79,7 @@ public sealed class ConstantTimeComparer : IConstantTimeComparer
         if (left.Length != right.Length)
         {
             Span<byte> dummy = stackalloc byte[1];
-            CryptographicOperations.FixedTimeEquals(dummy, dummy);
-            return false;
+            return CryptographicOperations.FixedTimeEquals(dummy, dummy) && false;
         }
 
         return CryptographicOperations.FixedTimeEquals(left, right);
@@ -118,8 +116,7 @@ public sealed class ConstantTimeComparer : IConstantTimeComparer
             // Without this, an attacker could distinguish "left is null" from "left is non-null"
             // by measuring whether the FixedTimeEquals call was executed.
             Span<byte> dummy = stackalloc byte[1];
-            CryptographicOperations.FixedTimeEquals(dummy, dummy);
-            return false;
+            return CryptographicOperations.FixedTimeEquals(dummy, dummy) && false;
         }
 
         return Shared.FixedTimeEqualsSecure(left.AsSpan(), right.AsSpan());

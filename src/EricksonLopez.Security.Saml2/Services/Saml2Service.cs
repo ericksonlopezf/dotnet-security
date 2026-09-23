@@ -144,7 +144,7 @@ public sealed class Saml2Service : ISaml2Service
             }
 
             // 2. Load XML securely (Disallow DTD / External Entities, preserve whitespace for XMLDSig)
-            var doc = CreateSecureXmlDocument(rawXml, preserveWhitespace: true);
+            var doc = CreateSecureXmlDocument(rawXml);
 
             var root = doc.DocumentElement!;
 
@@ -384,7 +384,7 @@ public sealed class Saml2Service : ISaml2Service
                 rawXml = Encoding.UTF8.GetString(bytes);
             }
 
-            var doc = CreateSecureXmlDocument(rawXml, preserveWhitespace: true);
+            var doc = CreateSecureXmlDocument(rawXml);
 
             var root = doc.DocumentElement!;
 
@@ -495,6 +495,7 @@ public sealed class Saml2Service : ISaml2Service
             }
         }
 
+        // Stryker disable once Equality: When count equals capacity, excess is zero so zero items are removed
         if (_seenAssertionIds.Count > MaxReplayCacheCapacity)
         {
             var excess = _seenAssertionIds.Count - MaxReplayCacheCapacity;
@@ -597,7 +598,7 @@ public sealed class Saml2Service : ISaml2Service
                 rawXml = Encoding.UTF8.GetString(bytes);
             }
 
-            var doc = CreateSecureXmlDocument(rawXml, preserveWhitespace: true);
+            var doc = CreateSecureXmlDocument(rawXml);
 
             var root = doc.DocumentElement!;
 
@@ -828,7 +829,7 @@ public sealed class Saml2Service : ISaml2Service
         _ => "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
     };
 
-    private static XmlDocument CreateSecureXmlDocument(string rawXml, bool preserveWhitespace = true)
+    private static XmlDocument CreateSecureXmlDocument(string rawXml)
     {
         var settings = new XmlReaderSettings
         {
@@ -842,7 +843,7 @@ public sealed class Saml2Service : ISaml2Service
         var doc = new XmlDocument
         {
             XmlResolver = null,
-            PreserveWhitespace = preserveWhitespace
+            PreserveWhitespace = true
         };
         doc.Load(xmlReader);
         return doc;

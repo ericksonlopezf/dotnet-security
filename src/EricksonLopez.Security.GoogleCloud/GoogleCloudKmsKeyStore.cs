@@ -103,7 +103,7 @@ public sealed class GoogleCloudKmsKeyStore : IKeyStore, IDisposable
     private string FormatKeySecretId(KeyIdentifier keyId, KeyVersion version) =>
         $"{_options.SecretPrefix}kms-key-{keyId.Value.Trim().Replace(':', '-').Replace('_', '-')}-v{version.Value}";
 
-    private static string SerializeKeyRecord(KeyMetadata metadata, byte[] keyBytes)
+    internal static string SerializeKeyRecord(KeyMetadata metadata, byte[] keyBytes)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))

@@ -122,6 +122,7 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
 
         // FINDING-NEW-02 / SEC-MEM-1: Pre-allocation validation.
         // Reject strings that cannot be valid base64 representation of 8-64 byte buffers before allocating.
+        // Stryker disable once Equality,Logical : Pre-allocation stackalloc defense-in-depth bounds validated by exact byte bounds on line 139
         if (parts[2].Length < 11 || parts[2].Length > 128 || parts[3].Length < 22 || parts[3].Length > 128)
             return PasswordVerificationResult.Failed;
 
@@ -180,6 +181,7 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
         }
 
         // FINDING-NEW-02 / SEC-MEM-1: Pre-allocation validation
+        // Stryker disable once Equality,Logical : Pre-allocation stackalloc defense-in-depth bounds validated by exact byte bounds on line 199
         if (parts[2].Length < 13 || parts[2].Length > 130 || parts[3].Length < 22 || parts[3].Length > 128)
         {
             return PasswordVerificationResult.Failed;

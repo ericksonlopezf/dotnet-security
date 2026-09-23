@@ -11,6 +11,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using EricksonLopez.Result;
+using EricksonLopez.Security.Abstractions.Errors;
+using EricksonLopez.Security.Abstractions.KeyManagement;
 using EricksonLopez.Security.Abstractions.Passwords;
 using EricksonLopez.Security.Abstractions.Primitives;
 using EricksonLopez.Security.Abstractions.Tokens;
@@ -409,10 +412,10 @@ public sealed class DiagnosticsTests
         Assert.True(res7.IsFailure);
 
         var apiKeyMetrics = recordedLongs.Where(r => r.InstrumentName == "security.apikey.validations_total").ToList();
-        Assert.Contains(apiKeyMetrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "invalid");
-        Assert.Contains(apiKeyMetrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "success");
-        Assert.Contains(apiKeyMetrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "revoked");
-        Assert.Contains(apiKeyMetrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "expired");
+        Assert.Equal(4, apiKeyMetrics.Count(m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "invalid"));
+        Assert.Equal(1, apiKeyMetrics.Count(m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "success"));
+        Assert.Equal(1, apiKeyMetrics.Count(m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "revoked"));
+        Assert.Equal(1, apiKeyMetrics.Count(m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "expired"));
     }
 
     [Fact]
@@ -460,5 +463,58 @@ public sealed class DiagnosticsTests
         Assert.Contains(recordedLongs, r => r.InstrumentName == "security.key.revocations_total" &&
             (int?)r.Tags.GetValueOrDefault(SecurityActivitySource.TagKeyVersion) == 2 &&
             (string?)r.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "success");
+
+        var failingStore = new StubFailingKeyStore();
+        var failingManager = new KeyLifecycleManager(failingStore);
+        var failRevoke = await failingManager.RevokeKeyAsync(new KeyIdentifier("k"), new KeyVersion(5), "reason");
+        Assert.True(failRevoke.IsFailure);
+        Assert.Contains(recordedLongs, r => r.InstrumentName == "security.key.revocations_total" &&
+            (int?)r.Tags.GetValueOrDefault(SecurityActivitySource.TagKeyVersion) == 5 &&
+            (string?)r.Tags.GetValueOrDefault(SecurityActivitySource.TagResult) == "failed");
+    }
+
+    [Fact]
+    public void LegacyPbkdf2PasswordHasher_VerifyPassword_EmitsExpectedMetrics()
+    {
+        var recordedLongs = new ConcurrentBag<(string InstrumentName, long Value, Dictionary<string, object?> Tags)>();
+
+        using var meterListener = new MeterListener();
+        meterListener.InstrumentPublished = (inst, l) =>
+        {
+            if (inst.Meter.Name == SecurityMeter.MeterName)
+            {
+                l.EnableMeasurementEvents(inst);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((inst, val, tags, state) =>
+        {
+            var dict = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var (k, v) in tags)
+            {
+                dict[k] = v;
+            }
+            recordedLongs.Add((inst.Name, val, dict));
+        });
+        meterListener.Start();
+
+        var hasher = LegacyPbkdf2PasswordHasher.Default;
+        hasher.VerifyPassword("p", "$argon2id$invalid");
+        hasher.VerifyPassword("p", "$legacy-pbkdf2$invalid");
+
+        var metrics = recordedLongs.Where(r => r.InstrumentName == "security.password.verifications_total").ToList();
+        Assert.Contains(metrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagHashAlgorithm) == "argon2id");
+        Assert.Contains(metrics, m => (string?)m.Tags.GetValueOrDefault(SecurityActivitySource.TagHashAlgorithm) == "legacy-pbkdf2");
+    }
+
+    private sealed class StubFailingKeyStore : IKeyStore
+    {
+        public ValueTask<Result> SaveKeyAsync(CryptographicKey key, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Result>(SecurityError.KeyNotFound("fail"));
+        public ValueTask<Result<CryptographicKey>> GetKeyAsync(KeyIdentifier keyId, KeyVersion version, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Result<CryptographicKey>>(SecurityError.KeyNotFound("fail"));
+        public ValueTask<Result<IReadOnlyList<KeyMetadata>>> ListMetadataAsync(KeyPurpose? purpose = null, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Result<IReadOnlyList<KeyMetadata>>>(new List<KeyMetadata>());
+        public ValueTask<Result> UpdateStatusAsync(KeyIdentifier keyId, KeyVersion version, KeyStatus newStatus, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Failure(SecurityError.KeyNotFound("fail")));
     }
 }

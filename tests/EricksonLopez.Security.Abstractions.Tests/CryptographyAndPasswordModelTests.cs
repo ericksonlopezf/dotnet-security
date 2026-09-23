@@ -120,9 +120,12 @@ public sealed class CryptographyAndPasswordModelTests
         Assert.Equal("tenant:acme-corp", System.Text.Encoding.UTF8.GetString(ctx.Span));
         Assert.NotEqual(0, ctx.GetHashCode());
 
-        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(null!));
-        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(""));
-        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant("   "));
+        var exNull = Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(null!));
+        Assert.Contains("Tenant ID cannot be null or whitespace.", exNull.Message, StringComparison.Ordinal);
+        var exEmpty = Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(""));
+        Assert.Contains("Tenant ID cannot be null or whitespace.", exEmpty.Message, StringComparison.Ordinal);
+        var exWs = Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant("   "));
+        Assert.Contains("Tenant ID cannot be null or whitespace.", exWs.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -168,6 +171,8 @@ public sealed class CryptographyAndPasswordModelTests
         // Both non-empty different
         Assert.False(ctx1.Equals(ctxDiff));
         Assert.False(ctx1 == ctxDiff);
+        Assert.NotEqual(ctx1.GetHashCode(), ctxDiff.GetHashCode());
+        Assert.NotEqual(ctx1.GetHashCode(), empty1.GetHashCode());
         Assert.True(ctx1 != ctxDiff);
     }
 

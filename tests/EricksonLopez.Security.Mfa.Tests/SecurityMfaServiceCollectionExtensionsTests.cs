@@ -55,6 +55,7 @@ public sealed class SecurityMfaServiceCollectionExtensionsTests
         IServiceCollection services = null!;
         var ex = Assert.Throws<ArgumentNullException>("services", () => services.AddDistributedTotpReplayStore<InMemoryTotpReplayStore>());
         ex.ParamName.Should().Be("services");
+        ex.StackTrace.Should().NotContain("ServiceCollectionServiceExtensions");
     }
 
     [Fact]
@@ -63,10 +64,12 @@ public sealed class SecurityMfaServiceCollectionExtensionsTests
         IServiceCollection nullServices = null!;
         var ex1 = Assert.Throws<ArgumentNullException>("services", () => nullServices.AddDistributedTotpReplayStore((k, e, ct) => System.Threading.Tasks.ValueTask.FromResult(true)));
         ex1.ParamName.Should().Be("services");
+        ex1.StackTrace.Should().NotContain("ServiceCollectionServiceExtensions");
 
         var services = new ServiceCollection();
         var ex2 = Assert.Throws<ArgumentNullException>("asyncHandler", () => services.AddDistributedTotpReplayStore(null!));
         ex2.ParamName.Should().Be("asyncHandler");
+        ex2.StackTrace.Should().NotContain("DelegateTotpReplayStore");
     }
 
     [Fact]

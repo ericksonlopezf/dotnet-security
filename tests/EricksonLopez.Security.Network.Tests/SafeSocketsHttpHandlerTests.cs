@@ -381,6 +381,70 @@ public sealed class SafeSocketsHttpHandlerTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task SendAsync_TemporaryOrPermanentRedirect_PreservesPostMethodOnSameOrigin(HttpStatusCode redirectCode)
+    {
+        var step = 0;
+        HttpMethod? capturedSecondMethod = null;
+        var mockInner = new TestHttpMessageHandler((req, ct) =>
+        {
+            step++;
+            if (step == 1)
+            {
+                var resp = new HttpResponseMessage(redirectCode);
+                resp.Headers.Location = new Uri("https://secure-site.com/destination");
+                return Task.FromResult(resp);
+            }
+
+            capturedSecondMethod = req.Method;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var options = new SsrfProtectionOptions { RequireHttps = true };
+        using var handler = new SafeSocketsHttpHandler(resolver: null, options: options, innerHandler: mockInner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "https://secure-site.com/origin");
+        var response = await invoker.SendAsync(req, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedSecondMethod.Should().Be(HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task SendAsync_RedirectWithDifferentScheme_TreatedAsCrossOrigin_StripsSensitiveHeaders()
+    {
+        var step = 0;
+        HttpRequestMessage? capturedSecondRequest = null;
+        var mockInner = new TestHttpMessageHandler((req, ct) =>
+        {
+            step++;
+            if (step == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Found);
+                resp.Headers.Location = new Uri("https://secure-site.com:8080/destination");
+                return Task.FromResult(resp);
+            }
+
+            capturedSecondRequest = req;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var options = new SsrfProtectionOptions { RequireHttps = false };
+        using var handler = new SafeSocketsHttpHandler(resolver: null, options: options, innerHandler: mockInner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "http://secure-site.com:8080/origin");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "secret-token");
+        var response = await invoker.SendAsync(req, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedSecondRequest.Should().NotBeNull();
+        capturedSecondRequest!.Headers.Contains("Authorization").Should().BeFalse();
+    }
+
     [Fact]
     public void SafeSocketsHttpHandler_Dispose_DisposesInnerHandler()
     {

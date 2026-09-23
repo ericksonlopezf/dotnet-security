@@ -384,4 +384,16 @@ public sealed class ErrorAndEventTests
         Assert.Equal("Security.PayloadTooLarge", errCustom.Code);
         Assert.Equal("Custom payload too large details.", errCustom.Description);
     }
+
+    [Fact]
+    public void SecurityError_StoreCapacityExceeded_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.StoreCapacityExceeded();
+        Assert.Equal("Security.StoreCapacityExceeded", errDefault.Code);
+        Assert.Equal("The key store capacity limit has been reached.", errDefault.Description);
+
+        var errCustom = SecurityError.StoreCapacityExceeded("Custom store capacity limit details.");
+        Assert.Equal("Security.StoreCapacityExceeded", errCustom.Code);
+        Assert.Equal("Custom store capacity limit details.", errCustom.Description);
+    }
 }

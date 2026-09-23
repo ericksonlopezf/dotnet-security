@@ -217,28 +217,26 @@ public sealed class SafeDnsResolver : ISafeDnsResolver
     private static bool HasAmbiguousNumericFormat(string host)
     {
         var parts = host.Split('.');
-        if (parts.Length == 4)
+        if (parts.Length != 4)
         {
-            bool allNumeric = true;
-            bool hasLeadingZero = false;
-            foreach (var part in parts)
-            {
-                if (part.Length == 0 || !IsAllDigits(part))
-                {
-                    allNumeric = false;
-                    break;
-                }
-
-                if (part.Length > 1 && part[0] == '0')
-                {
-                    hasLeadingZero = true;
-                }
-            }
-
-            return allNumeric && hasLeadingZero;
+            return false;
         }
 
-        return false;
+        bool hasLeadingZero = false;
+        foreach (var part in parts)
+        {
+            if (part.Length == 0 || !IsAllDigits(part))
+            {
+                return false;
+            }
+
+            if (part.Length > 1 && part[0] == '0')
+            {
+                hasLeadingZero = true;
+            }
+        }
+
+        return hasLeadingZero;
     }
 
     private static bool IsAllDigits(string str)

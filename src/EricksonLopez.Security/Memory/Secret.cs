@@ -98,7 +98,7 @@ public sealed class Secret<T> : EricksonLopez.Security.Abstractions.Primitives.I
         GC.SuppressFinalize(this);
     }
 
-    private void DisposeCore(bool fromFinalizer)
+    internal void DisposeCore(bool fromFinalizer)
     {
         // AUDIT-FIX-06: Use a compare-exchange to guarantee exactly one thread executes cleanup,
         // preventing double-dispose races and double-disposal of IDisposable inner values.

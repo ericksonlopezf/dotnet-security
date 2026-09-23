@@ -110,4 +110,18 @@ public sealed class SecretTests
         Assert.True(secret.IsDisposed);
         Assert.Equal(1, tracking.DisposeCount);
     }
+
+    [Fact]
+    public void Secret_DisposeCore_FinalizerAndExplicitDispose_ScrubsMemory()
+    {
+        byte[] bytes = [1, 2, 3, 4];
+        var secret = new Secret<byte[]>(bytes);
+        secret.DisposeCore(fromFinalizer: true);
+        Assert.True(secret.IsDisposed);
+        Assert.All(bytes, b => Assert.Equal(0, b));
+
+        // Calling DisposeCore when already disposed returns immediately
+        secret.DisposeCore(fromFinalizer: false);
+        Assert.True(secret.IsDisposed);
+    }
 }

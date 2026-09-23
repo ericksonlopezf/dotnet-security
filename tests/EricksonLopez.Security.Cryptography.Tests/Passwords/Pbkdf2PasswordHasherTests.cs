@@ -103,6 +103,10 @@ public sealed class Pbkdf2PasswordHasherTests
         // Wrong prefix
         _sut.VerifyPassword(password, "ARGON2$1000$c2FsdA==$aGFzaA==").Should().Be(PasswordVerificationResult.Failed);
 
+        var validSaltForPrefix = Convert.ToBase64String(new byte[16]);
+        var validDerivedForPrefix = Convert.ToBase64String(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("password", new byte[16], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32));
+        _sut.VerifyPassword(password, $"WRONG.V1$1000${validSaltForPrefix}${validDerivedForPrefix}").Should().Be(PasswordVerificationResult.Failed);
+
         // Non-integer iterations
         _sut.VerifyPassword(password, "PBKDF2.V1$notanumber$c2FsdA==$aGFzaA==").Should().Be(PasswordVerificationResult.Failed);
 
@@ -147,7 +151,8 @@ public sealed class Pbkdf2PasswordHasherTests
         hash256.Should().NotBeNullOrWhiteSpace();
 
         var invalid257 = new string('A', 257);
-        Assert.Throws<ArgumentOutOfRangeException>(() => _sut.HashPassword(invalid257.AsSpan()));
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => _sut.HashPassword(invalid257.AsSpan()));
+        ex.Message.Should().Contain("Password length cannot exceed 256 characters.");
     }
 
     [Fact]
@@ -165,9 +170,20 @@ public sealed class Pbkdf2PasswordHasherTests
         var longHash = hash256 + new string('X', 513);
         _sut.VerifyPassword("password".AsSpan(), longHash).Should().Be(PasswordVerificationResult.Failed);
 
-        // Hashed password exactly 512 characters (not valid format, but tests the length condition)
-        var hash512 = new string('X', 512);
-        _sut.VerifyPassword("password".AsSpan(), hash512).Should().Be(PasswordVerificationResult.Failed);
+        // Hashed password exactly 512 characters with valid format using padded iterations
+        var rawSalt = new byte[16];
+        var rawHash = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("password", rawSalt, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        var baseStr = $"PBKDF2.V1$1000${Convert.ToBase64String(rawSalt)}${Convert.ToBase64String(rawHash)}";
+        var neededPadding = 512 - baseStr.Length;
+        var paddedIterations = new string('0', neededPadding) + "1000";
+        var hash512Valid = $"PBKDF2.V1${paddedIterations}${Convert.ToBase64String(rawSalt)}${Convert.ToBase64String(rawHash)}";
+        hash512Valid.Length.Should().Be(512);
+        _sut.VerifyPassword("password".AsSpan(), hash512Valid).Should().Be(PasswordVerificationResult.Success);
+
+        // 513 characters fails immediately at line 104
+        var hash513 = "0" + hash512Valid;
+        hash513.Length.Should().Be(513);
+        _sut.VerifyPassword("password".AsSpan(), hash513).Should().Be(PasswordVerificationResult.Failed);
     }
 
     [Fact]
@@ -180,17 +196,23 @@ public sealed class Pbkdf2PasswordHasherTests
         _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$0${salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
         _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$-1${salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
 
-        // Greater than MaxStoredIterations (1_000_000) rejected
-        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000001${salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        // Greater than MaxStoredIterations (600_000) rejected
+        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$600001${salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
 
         // Boundary: 1 iteration allowed to proceed
         var derived1 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 1, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
         var hash1 = $"PBKDF2.V1$1${salt}${Convert.ToBase64String(derived1)}";
         _sut.VerifyPassword("pass".AsSpan(), hash1).Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
 
-        // Boundary: 1_000_000 iterations allowed to proceed
-        var dummyHashMax = $"PBKDF2.V1$1000000${salt}${hash}";
+        // Boundary: 600_000 iterations allowed to proceed
+        var dummyHashMax = $"PBKDF2.V1$600000${salt}${hash}";
         _sut.VerifyPassword("wrong".AsSpan(), dummyHashMax).Should().Be(PasswordVerificationResult.Failed);
+
+        // Boundary: 600_000 iterations with correct password succeeds
+        var saltMax = new byte[16];
+        var derivedMax = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", saltMax, 600000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        var hashMaxSuccess = $"PBKDF2.V1$600000${Convert.ToBase64String(saltMax)}${Convert.ToBase64String(derivedMax)}";
+        _sut.VerifyPassword("pass".AsSpan(), hashMaxSuccess).Should().Be(PasswordVerificationResult.Success);
     }
 
     [Fact]
@@ -215,7 +237,8 @@ public sealed class Pbkdf2PasswordHasherTests
         // 3. Decoded byte boundaries:
         // Salt: 8 <= saltBytesWritten <= 64
         var salt7Bytes = Convert.ToBase64String(new byte[7]);
-        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${salt7Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+        var derived7 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[7], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${salt7Bytes}${Convert.ToBase64String(derived7)}").Should().Be(PasswordVerificationResult.Failed);
 
         var salt8Bytes = Convert.ToBase64String(new byte[8]);
         var derived8 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[8], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
@@ -226,7 +249,8 @@ public sealed class Pbkdf2PasswordHasherTests
         _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${salt64Bytes}${Convert.ToBase64String(derived64)}").Should().Be(PasswordVerificationResult.Success);
 
         var salt65Bytes = Convert.ToBase64String(new byte[65]);
-        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${salt65Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+        var derived65 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[65], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${salt65Bytes}${Convert.ToBase64String(derived65)}").Should().Be(PasswordVerificationResult.Failed);
 
         // Hash: 16 <= hashBytesWritten <= 64
         var hash15Bytes = Convert.ToBase64String(new byte[15]);
@@ -266,22 +290,29 @@ public sealed class Pbkdf2PasswordHasherTests
         _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt}${hash}$extra").Should().Be(PasswordVerificationResult.Failed);
 
         // Wrong parameter prefixes
-        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$x=1000$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
-        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$x={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        var saltT2Prefix = new byte[16];
+        var derivedT2Prefix = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", saltT2Prefix, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$x=1000$s={Convert.ToBase64String(saltT2Prefix)}${Convert.ToBase64String(derivedT2Prefix)}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$x={Convert.ToBase64String(saltT2Prefix)}${Convert.ToBase64String(derivedT2Prefix)}").Should().Be(PasswordVerificationResult.Failed);
 
         // Invalid iterations
         _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=abc$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
         _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=0$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
         _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=-10$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
-        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000001$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=600001$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
 
-        // Iteration boundary: 1 iteration and 1_000_000 iterations
+        // Iteration boundary: 1 iteration and 600_000 iterations
         var derived1 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 1, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
         var hash1 = $"$pbkdf2-sha512$i=1$s={salt}${Convert.ToBase64String(derived1)}";
         _sut.VerifyPassword("pass".AsSpan(), hash1).Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
 
-        var hashMax = $"$pbkdf2-sha512$i=1000000$s={salt}${hash}";
+        var hashMax = $"$pbkdf2-sha512$i=600000$s={salt}${hash}";
         _sut.VerifyPassword("wrong".AsSpan(), hashMax).Should().Be(PasswordVerificationResult.Failed);
+
+        // 600_000 iterations with correct password in Tier 2
+        var derivedT2Max = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 600000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        var hashT2Max = $"$pbkdf2-sha512$i=600000$s={salt}${Convert.ToBase64String(derivedT2Max)}";
+        _sut.VerifyPassword("pass".AsSpan(), hashT2Max).Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
     }
 
     [Fact]
@@ -306,7 +337,8 @@ public sealed class Pbkdf2PasswordHasherTests
         // Decoded byte boundaries:
         // Salt: 8 <= saltBytesWritten <= 64
         var salt7Bytes = Convert.ToBase64String(new byte[7]);
-        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt7Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+        var derivedT2_7 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[7], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt7Bytes}${Convert.ToBase64String(derivedT2_7)}").Should().Be(PasswordVerificationResult.Failed);
 
         var salt8Bytes = Convert.ToBase64String(new byte[8]);
         var derived8 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[8], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
@@ -317,7 +349,8 @@ public sealed class Pbkdf2PasswordHasherTests
         _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt64Bytes}${Convert.ToBase64String(derived64)}").Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
 
         var salt65Bytes = Convert.ToBase64String(new byte[65]);
-        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt65Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+        var derivedT2_65 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[65], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt65Bytes}${Convert.ToBase64String(derivedT2_65)}").Should().Be(PasswordVerificationResult.Failed);
 
         // Hash: 16 <= hashBytesWritten <= 64
         var hash15Bytes = Convert.ToBase64String(new byte[15]);

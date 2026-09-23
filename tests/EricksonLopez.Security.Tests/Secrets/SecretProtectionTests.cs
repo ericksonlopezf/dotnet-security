@@ -384,6 +384,98 @@ public sealed class SecretProtectionTests
         Assert.Equal(payload, unprotectResult.Value);
     }
 
+    [Fact]
+    public async Task AesGcmSecretProtector_UnprotectToSecretBufferAsync_RoundtripsSuccessfully()
+    {
+        var meta = new KeyMetadata(KeyIdentifier.New(), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-GCM", DateTimeOffset.UtcNow, null);
+        var keyProvider = new StandaloneKeyProvider(meta, 32);
+        var protector = new AesGcmSecretProtector(keyProvider);
+
+        byte[] plaintext = Encoding.UTF8.GetBytes("SuperSecretToken12345");
+        var aad = AuthenticatedContext.ForTenant("tenant-42");
+
+        var protectResult = await protector.ProtectAsync(plaintext, KeyPurpose.SecretProtection, aad);
+        Assert.True(protectResult.IsSuccess);
+
+        var unprotectResult = await protector.UnprotectToSecretBufferAsync(protectResult.Value, aad);
+        Assert.True(unprotectResult.IsSuccess);
+        using var secretBuffer = unprotectResult.Value;
+        Assert.True(secretBuffer.Span.SequenceEqual(plaintext));
+    }
+
+    [Fact]
+    public async Task AesGcmSecretProtector_UnprotectToSecretBufferAsync_AadMismatch_ReturnsError()
+    {
+        var meta = new KeyMetadata(KeyIdentifier.New(), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-GCM", DateTimeOffset.UtcNow, null);
+        var keyProvider = new StandaloneKeyProvider(meta, 32);
+        var protector = new AesGcmSecretProtector(keyProvider);
+
+        byte[] plaintext = Encoding.UTF8.GetBytes("SuperSecretToken12345");
+        var aad = AuthenticatedContext.ForTenant("tenant-42");
+        var differentAad = AuthenticatedContext.ForTenant("tenant-99");
+
+        var protectResult = await protector.ProtectAsync(plaintext, KeyPurpose.SecretProtection, aad);
+        Assert.True(protectResult.IsSuccess);
+
+        // 1. Envelope has AAD, but expectedAssociatedData is empty
+        var err1 = await protector.UnprotectToSecretBufferAsync(protectResult.Value, AuthenticatedContext.Empty);
+        Assert.True(err1.IsFailure);
+        Assert.Equal("Security.AssociatedDataMismatch", err1.Error.Code);
+        Assert.Equal("The authenticated associated data (AAD) provided does not match the authenticated context in the secret envelope.", err1.Error.Description);
+
+        // 2. Envelope has AAD, but expectedAssociatedData is different
+        var err2 = await protector.UnprotectToSecretBufferAsync(protectResult.Value, differentAad);
+        Assert.True(err2.IsFailure);
+        Assert.Equal("Security.AssociatedDataMismatch", err2.Error.Code);
+        Assert.Equal("The authenticated associated data (AAD) provided does not match the authenticated context in the secret envelope.", err2.Error.Description);
+
+        // 3. Envelope has NO AAD, but expectedAssociatedData is provided
+        var protectNoAad = await protector.ProtectAsync(plaintext, KeyPurpose.SecretProtection, AuthenticatedContext.Empty);
+        Assert.True(protectNoAad.IsSuccess);
+
+        var err3 = await protector.UnprotectToSecretBufferAsync(protectNoAad.Value, aad);
+        Assert.True(err3.IsFailure);
+        Assert.Equal("Security.AssociatedDataMismatch", err3.Error.Code);
+        Assert.Equal("The secret envelope does not contain authenticated associated data (AAD), but associated data was expected.", err3.Error.Description);
+    }
+
+    [Fact]
+    public async Task AesGcmSecretProtector_UnprotectToSecretBufferAsync_DeserializationOrKeyOrDecryptionFailures()
+    {
+        var meta = new KeyMetadata(KeyIdentifier.New(), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-GCM", DateTimeOffset.UtcNow, null);
+        var keyProvider = new StandaloneKeyProvider(meta, 32);
+        var protector = new AesGcmSecretProtector(keyProvider);
+
+        // 1. Deserialization failure
+        var deserr = await protector.UnprotectToSecretBufferAsync(new byte[] { 1, 2, 3 });
+        Assert.True(deserr.IsFailure);
+
+        // 2. Key resolution failure
+        var protectorFailingKey = new AesGcmSecretProtector(new FailingKeyProvider());
+
+        var validProtected = await protector.ProtectAsync(Encoding.UTF8.GetBytes("hello"));
+        Assert.True(validProtected.IsSuccess);
+
+        var keyerr = await protectorFailingKey.UnprotectToSecretBufferAsync(validProtected.Value);
+        Assert.True(keyerr.IsFailure);
+        Assert.Equal("Security.KeyNotFound", keyerr.Error.Code);
+
+        // 3. Decryption failure
+        var protectorFailingEngine = new AesGcmSecretProtector(keyProvider, new FailingEncryptionEngine());
+        var decErr = await protectorFailingEngine.UnprotectToSecretBufferAsync(validProtected.Value);
+        Assert.True(decErr.IsFailure);
+        Assert.Equal("Security.DecryptionFailed", decErr.Error.Code);
+    }
+
+    private sealed class FailingKeyProvider : IEncryptionKeyProvider
+    {
+        public ValueTask<Result<CryptographicKey>> GetActiveEncryptionKeyAsync(KeyPurpose purpose, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Result<CryptographicKey>>(SecurityError.KeyNotFound("no active key"));
+
+        public ValueTask<Result<CryptographicKey>> GetDecryptionKeyAsync(KeyIdentifier keyId, KeyVersion version, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<Result<CryptographicKey>>(SecurityError.KeyNotFound("no dec key"));
+    }
+
     private sealed class StandaloneKeyProvider : IEncryptionKeyProvider
     {
         private readonly KeyMetadata _meta;

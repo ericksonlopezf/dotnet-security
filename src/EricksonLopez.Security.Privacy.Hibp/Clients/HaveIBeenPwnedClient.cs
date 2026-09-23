@@ -55,13 +55,11 @@ public sealed class HaveIBeenPwnedClient : IHaveIBeenPwnedClient
             return Result<PwnedPasswordCheckResult>.Success(new PwnedPasswordCheckResult("00000", 0));
         }
 
-        int maxByteCount = Encoding.UTF8.GetMaxByteCount(password.Length);
+        int byteCount = Encoding.UTF8.GetByteCount(password);
         byte[]? rented = null;
-        Span<byte> utf8Bytes = stackalloc byte[256];
-        if (maxByteCount > 256)
-        {
-            utf8Bytes = rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
-        }
+        Span<byte> utf8Bytes = byteCount <= 256
+            ? stackalloc byte[256]
+            : (rented = ArrayPool<byte>.Shared.Rent(byteCount));
 
         Span<byte> hashBytes = stackalloc byte[20];
         string fullHexHash;

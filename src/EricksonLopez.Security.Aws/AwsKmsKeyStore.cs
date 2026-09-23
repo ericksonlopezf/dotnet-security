@@ -119,7 +119,7 @@ public sealed class AwsKmsKeyStore : IKeyStore, IDisposable
     private string FormatKeySecretName(KeyIdentifier keyId, KeyVersion version) =>
         $"{_options.SecretPrefix}kms-keys/{keyId.Value.Trim().Replace(':', '-').Replace('_', '-')}/v{version.Value}";
 
-    private static string SerializeKeyRecord(KeyMetadata metadata, byte[] keyBytes)
+    internal static string SerializeKeyRecord(KeyMetadata metadata, byte[] keyBytes)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
