@@ -4,6 +4,8 @@ namespace EricksonLopez.Security.HashiCorpVault.Tests;
 
 using System;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using AwesomeAssertions;
@@ -107,8 +109,12 @@ public sealed class HashiCorpVaultAdaptersTests
     {
         IServiceCollection nullServices = null!;
         Assert.Throws<ArgumentNullException>(() => nullServices.AddHashiCorpVaultSecurity());
-        Assert.Throws<ArgumentNullException>(() => nullServices.AddHashiCorpVaultSecurity(_ => { }));
-        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddHashiCorpVaultSecurity(null!));
+        var exServices = Assert.Throws<ArgumentNullException>(() => nullServices.AddHashiCorpVaultSecurity(_ => { }));
+        exServices.ParamName.Should().Be("services");
+
+        var exConfigure = Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddHashiCorpVaultSecurity(null!));
+        exConfigure.ParamName.Should().Be("configure");
+        exConfigure.StackTrace.Should().NotContain("OptionsServiceCollectionExtensions");
 
         var services = new ServiceCollection();
         services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
@@ -449,5 +455,400 @@ public sealed class HashiCorpVaultAdaptersTests
         await Assert.ThrowsAsync<OperationCanceledException>(() => keyStore.GetKeyAsync(keyId, version, cts.Token).AsTask());
         await Assert.ThrowsAsync<OperationCanceledException>(() => keyStore.ListMetadataAsync(cancellationToken: cts.Token).AsTask());
         await Assert.ThrowsAsync<OperationCanceledException>(() => keyStore.UpdateStatusAsync(keyId, version, KeyStatus.Retired, cts.Token).AsTask());
+    }
+
+    private sealed class TestHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _handler;
+
+        public TestHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+        {
+            _handler = handler;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => _handler(request);
+    }
+
+    private static HttpClient CreateMockHttpClient(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+    {
+        return new HttpClient(new TestHttpMessageHandler(handler))
+        {
+            BaseAddress = new Uri("http://127.0.0.1:8200/")
+        };
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_AppRoleAuth_TokenCaching_And_Namespace()
+    {
+        var loginCalls = 0;
+        var secretCalls = 0;
+
+        using var httpClient = CreateMockHttpClient(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (uri.Contains("v1/auth/approle/login", StringComparison.Ordinal))
+            {
+                loginCalls++;
+                req.Headers.Contains("X-Vault-Namespace").Should().BeTrue();
+                req.Headers.GetValues("X-Vault-Namespace").First().Should().Be("my-ns");
+
+                var body = await req.Content!.ReadAsStringAsync();
+                body.Should().Contain("test-role");
+                body.Should().Contain("test-secret");
+
+                var responseJson = "{\"auth\":{\"client_token\":\"s.mock-approle-token\",\"lease_duration\":3600}}";
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(responseJson, System.Text.Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (uri.Contains("v1/secret/data/test-secret", StringComparison.Ordinal))
+            {
+                secretCalls++;
+                req.Headers.Contains("X-Vault-Token").Should().BeTrue();
+                req.Headers.GetValues("X-Vault-Token").First().Should().Be("s.mock-approle-token");
+                req.Headers.Contains("X-Vault-Namespace").Should().BeTrue();
+                req.Headers.GetValues("X-Vault-Namespace").First().Should().Be("my-ns");
+
+                var secretJson = "{\"data\":{\"data\":{\"value\":\"hello-world\"}}}";
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(secretJson, System.Text.Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "test-role",
+            SecretId = "test-secret",
+            Namespace = "my-ns",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+
+        // First call logs in and retrieves secret
+        var res1 = await client.ReadKvSecretAsync("test-secret", CancellationToken.None);
+        res1.IsSuccess.Should().BeTrue();
+        res1.Value.Should().Be("hello-world");
+        loginCalls.Should().Be(1);
+        secretCalls.Should().Be(1);
+
+        // Second call should reuse the cached token without logging in again
+        var res2 = await client.ReadKvSecretAsync("test-secret", CancellationToken.None);
+        res2.IsSuccess.Should().BeTrue();
+        res2.Value.Should().Be("hello-world");
+        loginCalls.Should().Be(1);
+        secretCalls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_AppRoleAuth_Failures_ThrowExpectedExceptions()
+    {
+        // 401 Unauthorized
+        using var client401 = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "bad-role",
+            SecretId = "bad-secret",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("{\"errors\":[\"invalid credentials\"]}")
+            })),
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        var ex401 = await Assert.ThrowsAsync<InvalidOperationException>(() => client401.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
+        ex401.Message.Should().Contain("HashiCorp Vault AppRole login failed (Unauthorized)");
+
+        // Missing 'auth' object
+        using var clientNoAuth = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "r",
+            SecretId = "s",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"data\":{}}")
+            })),
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        var exNoAuth = await Assert.ThrowsAsync<InvalidOperationException>(() => clientNoAuth.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
+        exNoAuth.Message.Should().Contain("lacked the 'auth' object");
+
+        // Missing or empty client_token
+        using var clientEmptyToken = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "r",
+            SecretId = "s",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"auth\":{\"client_token\":\"   \"}}")
+            })),
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        var exEmptyToken = await Assert.ThrowsAsync<InvalidOperationException>(() => clientEmptyToken.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
+        exEmptyToken.Message.Should().Contain("valid client_token");
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultSecretStore_LiveClient_GetAndSetSecret_SuccessAndFailures()
+    {
+        var storedSecretValue = "original-secret";
+
+        using var httpClient = CreateMockHttpClient(req =>
+        {
+            var uri = req.RequestUri!.ToString();
+            if (req.Method == HttpMethod.Get && uri.Contains("v1/secret/data/my-secret", StringComparison.Ordinal))
+            {
+                var json = $"{{\"data\":{{\"data\":{{\"value\":\"{storedSecretValue}\"}}}}}}";
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json)
+                });
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("v1/secret/data/raw-secret", StringComparison.Ordinal))
+            {
+                var json = "{\"data\":{\"data\":{\"other\":\"custom-json\"}}}";
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(json)
+                });
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("v1/secret/data/missing", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("v1/secret/data/error", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("KV engine error")
+                });
+            }
+
+            if (req.Method == HttpMethod.Post && uri.Contains("v1/secret/data/my-secret", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            }
+
+            if (req.Method == HttpMethod.Post && uri.Contains("v1/secret/data/write-error", StringComparison.Ordinal))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("Write failed")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+
+        var options = Options.Create(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.static-token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        using var store = new HashiCorpVaultSecretStore(options);
+
+        // Get success with value prop
+        var getRes = await store.GetSecretAsync("my-secret");
+        getRes.IsSuccess.Should().BeTrue();
+        getRes.Value.UnsafeValue.Should().Be("original-secret");
+
+        // Get success with raw JSON
+        var getRaw = await store.GetSecretAsync("raw-secret");
+        getRaw.IsSuccess.Should().BeTrue();
+        getRaw.Value.UnsafeValue.Should().Contain("custom-json");
+
+        // Get 404
+        var notFound = await store.GetSecretAsync("missing");
+        notFound.IsFailure.Should().BeTrue();
+        notFound.Error.Code.Should().Be("Security.SecretNotFound");
+
+        // Get 500
+        var getErr = await store.GetSecretAsync("error");
+        getErr.IsFailure.Should().BeTrue();
+        getErr.Error.Description.Should().Contain("Vault read failed with status InternalServerError");
+
+        // Set success
+        var setRes = await store.SetSecretAsync("my-secret", "new-val");
+        setRes.IsSuccess.Should().BeTrue();
+
+        // Set failure
+        var setErr = await store.SetSecretAsync("write-error", "new-val");
+        setErr.IsFailure.Should().BeTrue();
+        setErr.Error.Description.Should().Contain("Vault write failed with status InternalServerError: Write failed");
+
+        // Empty secret name validation
+        (await store.GetSecretAsync("")).IsFailure.Should().BeTrue();
+        (await store.SetSecretAsync("", "val")).IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultKeyStore_LiveClient_SaveKey_GetKey_UpdateStatus_And_ListMetadata()
+    {
+        var rawKey = new byte[] { 10, 20, 30, 40, 50, 60, 70, 80, 11, 22, 33, 44, 55, 66, 77, 88, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+        string? storedKeyJson = null;
+
+        using var httpClient = CreateMockHttpClient(async req =>
+        {
+            var uri = req.RequestUri!.ToString();
+
+            if (req.Method == HttpMethod.Post && uri.Contains("keys/my-key", StringComparison.Ordinal) && uri.EndsWith("/v1", StringComparison.Ordinal))
+            {
+                var body = await req.Content!.ReadAsStringAsync();
+                storedKeyJson = body;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("keys/my-key", StringComparison.Ordinal) && uri.EndsWith("/v1", StringComparison.Ordinal))
+            {
+                if (storedKeyJson != null)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent($"{{\"data\":{storedKeyJson}}}")
+                    };
+                }
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("keys/missing", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            if (req.Method == HttpMethod.Get && uri.Contains("keys/error", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("Transit error")
+                };
+            }
+
+            if (req.Method == HttpMethod.Post && uri.Contains("keys/fail-write", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("Key write error")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var options = Options.Create(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.key-token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        using var store = new HashiCorpVaultKeyStore(options);
+
+        // ListMetadata in live mode returns empty list
+        var listRes = await store.ListMetadataAsync();
+        listRes.IsSuccess.Should().BeTrue();
+        listRes.Value.Should().BeEmpty();
+
+        var keyId = KeyIdentifier.Prefixed("my-key");
+        var version = KeyVersion.Initial;
+        var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        var key = new CryptographicKey(metadata, SecretBuffer.FromSpan(rawKey));
+
+        // SaveKeyAsync success
+        var saveRes = await store.SaveKeyAsync(key);
+        saveRes.IsSuccess.Should().BeTrue();
+
+        // SaveKeyAsync failure
+        var failKey = new CryptographicKey(metadata with { KeyId = KeyIdentifier.Prefixed("fail-write") }, SecretBuffer.FromSpan(rawKey));
+        var saveFail = await store.SaveKeyAsync(failKey);
+        saveFail.IsFailure.Should().BeTrue();
+        saveFail.Error.Description.Should().Contain("Vault key write failed with status InternalServerError: Key write error");
+
+        // GetKeyAsync success
+        var getRes = await store.GetKeyAsync(keyId, version);
+        getRes.IsSuccess.Should().BeTrue();
+        getRes.Value.Metadata.Purpose.Should().Be(KeyPurpose.Encryption);
+        getRes.Value.GetKeyBytes()[0].Should().Be(10);
+
+        // GetKeyAsync 404
+        var notFound = await store.GetKeyAsync(KeyIdentifier.Prefixed("missing"), version);
+        notFound.IsFailure.Should().BeTrue();
+        notFound.Error.Code.Should().Be("Security.KeyNotFound");
+
+        // GetKeyAsync 500
+        var getErr = await store.GetKeyAsync(KeyIdentifier.Prefixed("error"), version);
+        getErr.IsFailure.Should().BeTrue();
+        getErr.Error.Description.Should().Contain("Vault key read failed with status InternalServerError: Transit error");
+
+        // UpdateStatusAsync success to Revoked
+        var revokeRes = await store.UpdateStatusAsync(keyId, version, KeyStatus.Revoked);
+        revokeRes.IsSuccess.Should().BeTrue();
+        storedKeyJson.Should().Contain("\"status\":\"Revoked\"");
+        storedKeyJson.Should().Contain("\"revoked_at\":");
+
+        // UpdateStatusAsync success to Active
+        var activeRes = await store.UpdateStatusAsync(keyId, version, KeyStatus.Active);
+        activeRes.IsSuccess.Should().BeTrue();
+        storedKeyJson.Should().Contain("\"status\":\"Active\"");
+
+        // UpdateStatusAsync when key not found
+        var updateNotFound = await store.UpdateStatusAsync(KeyIdentifier.Prefixed("missing"), version, KeyStatus.Retired);
+        updateNotFound.IsFailure.Should().BeTrue();
+        updateNotFound.Error.Code.Should().Be("Security.KeyNotFound");
+
+        // UpdateStatusAsync when write fails
+        var updateWriteFail = await store.UpdateStatusAsync(KeyIdentifier.Prefixed("fail-write"), version, KeyStatus.Retired);
+        updateWriteFail.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_Disposal_HandlesOwnsHttpClientAndCallingAfterDispose()
+    {
+        // Unowned HttpClient
+        var unownedHandler = new TestHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        var unownedHttp = new HttpClient(unownedHandler) { BaseAddress = new Uri("http://127.0.0.1:8200/") };
+        var optionsUnowned = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = unownedHttp
+        };
+
+        var clientUnowned = new HashiCorpVaultClient(optionsUnowned);
+        clientUnowned.Dispose();
+        clientUnowned.Dispose(); // idempotent
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => clientUnowned.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
+
+        // Owned HttpClient
+        var optionsOwned = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = null
+        };
+
+        var clientOwned = new HashiCorpVaultClient(optionsOwned);
+        clientOwned.Dispose();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => clientOwned.ReadKvSecretAsync("s", CancellationToken.None).AsTask());
     }
 }

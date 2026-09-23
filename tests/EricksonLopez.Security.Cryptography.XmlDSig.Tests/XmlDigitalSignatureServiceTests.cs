@@ -676,5 +676,134 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
         var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(doc, _cert);
         verifyResult.IsSuccess.Should().BeTrue();
     }
+
+    [Fact]
+    public void VerifyXmlDetailed_WithLowercaseAndUppercaseIdAttributes_FindElementByIdSafeResolvesElement()
+    {
+        // Lowercase id="sec_lower"
+        var xmlLower = "<Doc><Section id=\"sec_lower\"><Data>HelloLower</Data></Section></Doc>";
+        var signLower = XmlDigitalSignatureService.Instance.SignXml(xmlLower, _cert, new XmlSigningOptions { ReferenceUri = "#sec_lower" });
+        signLower.IsSuccess.Should().BeTrue();
+
+        var docLower = new XmlDocument { PreserveWhitespace = true };
+        docLower.LoadXml(signLower.Value);
+        var resLower = XmlDigitalSignatureService.Instance.VerifyAndExtractSignedElement(docLower, _cert);
+        resLower.IsSuccess.Should().BeTrue();
+        resLower.Value.SignedElement.Should().NotBeNull();
+        resLower.Value.SignedElement!.GetAttribute("id").Should().Be("sec_lower");
+
+        // Uppercase ID="sec_upper"
+        var xmlUpper = "<Doc><Section ID=\"sec_upper\"><Data>HelloUpper</Data></Section></Doc>";
+        var signUpper = XmlDigitalSignatureService.Instance.SignXml(xmlUpper, _cert, new XmlSigningOptions { ReferenceUri = "#sec_upper" });
+        signUpper.IsSuccess.Should().BeTrue();
+
+        var docUpper = new XmlDocument { PreserveWhitespace = true };
+        docUpper.LoadXml(signUpper.Value);
+        var resUpper = XmlDigitalSignatureService.Instance.VerifyAndExtractSignedElement(docUpper, _cert);
+        resUpper.IsSuccess.Should().BeTrue();
+        resUpper.Value.SignedElement.Should().NotBeNull();
+        resUpper.Value.SignedElement!.GetAttribute("ID").Should().Be("sec_upper");
+    }
+
+    [Fact]
+    public void VerifyXmlDetailed_WithExcessiveXmlNesting_ThrowsAndReturnsVerificationError()
+    {
+        // Create an XML document with > 64 levels of nesting
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 70; i++)
+        {
+            sb.Append($"<Level{i}>");
+        }
+        sb.Append("<Target id=\"deep_target\"><Data>Deep</Data></Target>");
+        for (int i = 69; i >= 0; i--)
+        {
+            sb.Append($"</Level{i}>");
+        }
+
+        var deepXml = sb.ToString();
+        var signDeep = XmlDigitalSignatureService.Instance.SignXml(deepXml, _cert, new XmlSigningOptions { ReferenceUri = "#deep_target" });
+        signDeep.IsSuccess.Should().BeTrue();
+
+        var docDeep = new XmlDocument { PreserveWhitespace = true };
+        docDeep.LoadXml(signDeep.Value);
+        var verifyDeep = XmlDigitalSignatureService.Instance.VerifyAndExtractSignedElement(docDeep, _cert);
+        verifyDeep.IsFailure.Should().BeTrue();
+        verifyDeep.Error.Code.Should().Be("XmlDigitalSignatureService.VerificationError");
+        verifyDeep.Error.Description.Should().Contain("maximum permitted nesting depth");
+    }
+
+    [Fact]
+    public void VerifyXmlDetailed_DisallowedTransformAlgorithm_ReturnsDisallowedTransformError()
+    {
+        var sampleXml = "<Doc Id=\"doc1\"><Data>Sensitive</Data></Doc>";
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert, new XmlSigningOptions { ReferenceUri = "#doc1" });
+        signResult.IsSuccess.Should().BeTrue();
+
+        var options = new XmlVerificationOptions
+        {
+            AllowedTransformAlgorithms = new HashSet<string> { "http://unrelated-transform-not-used" }
+        };
+
+        var doc = new XmlDocument { PreserveWhitespace = true };
+        doc.LoadXml(signResult.Value);
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyAndExtractSignedElement(doc, _cert, options);
+        verifyResult.IsFailure.Should().BeTrue();
+        verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.DisallowedTransform");
+        verifyResult.Error.Description.Should().Contain("is not permitted by verification policy");
+    }
+
+    [Fact]
+    public void VerifyXml_IsValidXmlId_BoundariesAndCharacters()
+    {
+        // Boundary 256 characters (valid)
+        var exact256 = new string('a', 256);
+        var xml256 = $"<Doc Id=\"{exact256}\"><Data>OK</Data></Doc>";
+        var sign256 = XmlDigitalSignatureService.Instance.SignXml(xml256, _cert, new XmlSigningOptions { ReferenceUri = $"#{exact256}" });
+        sign256.IsSuccess.Should().BeTrue();
+        var verify256 = XmlDigitalSignatureService.Instance.VerifyXml(sign256.Value, _cert);
+        verify256.IsSuccess.Should().BeTrue();
+
+        // Starts with underscore (valid)
+        var underscoreId = "_valid-id.name_123";
+        var xmlUnderscore = $"<Doc Id=\"{underscoreId}\"><Data>OK</Data></Doc>";
+        var signUnderscore = XmlDigitalSignatureService.Instance.SignXml(xmlUnderscore, _cert, new XmlSigningOptions { ReferenceUri = $"#{underscoreId}" });
+        signUnderscore.IsSuccess.Should().BeTrue();
+        var verifyUnderscore = XmlDigitalSignatureService.Instance.VerifyXml(signUnderscore.Value, _cert);
+        verifyUnderscore.IsSuccess.Should().BeTrue();
+
+        // Starts with digit (invalid)
+        var digitId = "1starts-with-digit";
+        var xmlDigit = $"<Doc Id=\"{digitId}\"><Data>OK</Data></Doc>";
+        var signDigit = XmlDigitalSignatureService.Instance.SignXml(xmlDigit, _cert, new XmlSigningOptions { ReferenceUri = $"#{digitId}" });
+        if (signDigit.IsSuccess)
+        {
+            var verifyDigit = XmlDigitalSignatureService.Instance.VerifyXml(signDigit.Value, _cert);
+            verifyDigit.IsFailure.Should().BeTrue();
+            verifyDigit.Error.Code.Should().Be("XmlDigitalSignatureService.InvalidReferenceId");
+        }
+
+        // Contains invalid character (e.g. '$')
+        var dollarId = "id$with$dollar";
+        var xmlDollar = $"<Doc Id=\"{dollarId}\"><Data>OK</Data></Doc>";
+        var signDollar = XmlDigitalSignatureService.Instance.SignXml(xmlDollar, _cert, new XmlSigningOptions { ReferenceUri = $"#{dollarId}" });
+        if (signDollar.IsSuccess)
+        {
+            var verifyDollar = XmlDigitalSignatureService.Instance.VerifyXml(signDollar.Value, _cert);
+            verifyDollar.IsFailure.Should().BeTrue();
+            verifyDollar.Error.Code.Should().Be("XmlDigitalSignatureService.InvalidReferenceId");
+        }
+    }
+
+    [Fact]
+    public void SignXml_NonExistentReferenceUri_ReturnsComputationFailedError()
+    {
+        var doc = new XmlDocument { PreserveWhitespace = true };
+        doc.LoadXml("<Doc><Data>Val</Data></Doc>");
+        var options = new XmlSigningOptions { ReferenceUri = "#nonexistent_element" };
+        var result = XmlDigitalSignatureService.Instance.SignXml(doc, _cert, options);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("XmlDigitalSignatureService.ComputationFailed");
+        result.Error.Description.Should().Contain("Failed to compute XML signature");
+    }
 }
 

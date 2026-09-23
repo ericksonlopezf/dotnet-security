@@ -57,9 +57,11 @@ public sealed class HaveIBeenPwnedClient : IHaveIBeenPwnedClient
 
         int maxByteCount = Encoding.UTF8.GetMaxByteCount(password.Length);
         byte[]? rented = null;
-        Span<byte> utf8Bytes = maxByteCount <= 256
-            ? stackalloc byte[maxByteCount]
-            : (rented = ArrayPool<byte>.Shared.Rent(maxByteCount));
+        Span<byte> utf8Bytes = stackalloc byte[256];
+        if (maxByteCount > 256)
+        {
+            utf8Bytes = rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
+        }
 
         Span<byte> hashBytes = stackalloc byte[20];
         string fullHexHash;

@@ -854,12 +854,87 @@ public sealed class TotpServiceTests
 
         var code1 = service.ComputeCode(Secret, now, options);
         (await service.VerifyCodeAsync(Secret, code1, now, options)).Should().BeTrue();
+        service.ConsumedCodesCount.Should().Be(1);
 
         // Advance time by 1 hour (so code1 entry is expired)
         var future = now.AddHours(1);
         fakeTime.SetUtcNow(future);
         var code2 = service.ComputeCode(Secret, future, options);
         (await service.VerifyCodeAsync(Secret, code2, future, options)).Should().BeTrue();
+
+        // Expired entry was evicted because count exceeded RoutinePruneThreshold (1), so only code2 remains
+        service.ConsumedCodesCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_ExactlyAtPruneThreshold_DoesNotPrune()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 10, RoutinePruneThreshold = 2 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        // Insert an expired code directly into consumed cache
+        service.ConsumedCodes.TryAdd("expired-key", now.AddMinutes(-5));
+
+        // Adding 1 more code reaches Count = 2, which is exactly equal to RoutinePruneThreshold (2)
+        // Count > RoutinePruneThreshold is false, so expired-key must NOT be pruned yet
+        var code = service.ComputeCode(Secret, now, options);
+        (await service.VerifyCodeAsync(Secret, code, now, options)).Should().BeTrue();
+
+        service.ConsumedCodesCount.Should().Be(2);
+        service.ConsumedCodes.ContainsKey("expired-key").Should().BeTrue();
+
+        // Adding a 3rd code exceeds RoutinePruneThreshold (2), triggering pruning!
+        var future = now.AddSeconds(30);
+        fakeTime.SetUtcNow(future);
+        var code3 = service.ComputeCode(Secret, future, options);
+        (await service.VerifyCodeAsync(Secret, code3, future, options)).Should().BeTrue();
+
+        service.ConsumedCodes.ContainsKey("expired-key").Should().BeFalse();
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_SecretDecodesToZeroBytes_ReturnsFalse()
+    {
+        var service = new TotpService();
+        var res = await service.VerifyCodeAsync("====", "123456");
+        res.Should().BeFalse();
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_ReplayWithinSameTimePeriod_IsDetectedAndBlocked()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var t1 = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true, PeriodSeconds = 30 };
+        var code = service.ComputeCode(Secret, t1, options);
+
+        var first = await service.VerifyCodeAsync(Secret, code, t1, options);
+        first.Should().BeTrue();
+
+        // 10 seconds later, still in the same 30s period: stepIndex = 12:00:10 / 30 == 12:00:00 / 30
+        var t2 = t1.AddSeconds(10);
+        var replay = await service.VerifyCodeAsync(Secret, code, t2, options);
+        replay.Should().BeFalse("replay in same period must be rejected");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_NullTimestampAndNullOptions_UsesDefaults()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var code = service.ComputeCode(Secret, fakeTime.GetUtcNow());
+
+        var res = await service.VerifyCodeAsync(Secret, code, timestamp: null, options: null);
+        res.Should().BeTrue();
+
+        // Verify that passing an explicit timestamp different from current time works with explicit options
+        var differentTime = fakeTime.GetUtcNow().AddDays(1);
+        var diffCode = service.ComputeCode(Secret, differentTime);
+        var resExplicit = await service.VerifyCodeAsync(Secret, diffCode, timestamp: differentTime, options: new TotpOptions());
+        resExplicit.Should().BeTrue();
     }
 }
 

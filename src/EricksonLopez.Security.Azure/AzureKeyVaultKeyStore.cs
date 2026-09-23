@@ -172,7 +172,7 @@ public sealed class AzureKeyVaultKeyStore : IKeyStore, IDisposable
         try
         {
             var secretName = FormatKeySecretName(keyId, version);
-            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(secretName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(secretName, null, cancellationToken).ConfigureAwait(false);
 
             var rawBytes = Convert.FromBase64String(secret.Value);
             var metadata = ParseMetadataFromProperties(secret.Properties, keyId, version);
@@ -266,7 +266,7 @@ public sealed class AzureKeyVaultKeyStore : IKeyStore, IDisposable
         try
         {
             var secretName = FormatKeySecretName(keyId, version);
-            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(secretName, cancellationToken: cancellationToken).ConfigureAwait(false);
+            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(secretName, null, cancellationToken).ConfigureAwait(false);
 
             secret.Properties.Tags["Status"] = newStatus.ToString();
             if (newStatus == KeyStatus.Revoked)

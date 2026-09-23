@@ -323,15 +323,17 @@ internal sealed class HashiCorpVaultClient : IDisposable
             innerData.TryGetProperty("expires_at", out var eProp);
             innerData.TryGetProperty("revoked_at", out var rProp);
 
-            var rawBytes = Convert.FromBase64String(bytesProp.GetString() ?? string.Empty);
-            var parsedKeyId = !string.IsNullOrWhiteSpace(idProp.GetString()) ? KeyIdentifier.Prefixed(idProp.GetString()!) : keyId;
-            var parsedVersion = int.TryParse(vProp.GetString(), CultureInfo.InvariantCulture, out var vNum) ? new KeyVersion(vNum) : version;
-            var purpose = Enum.TryParse<KeyPurpose>(pProp.GetString(), out var p) ? p : KeyPurpose.Encryption;
-            var status = Enum.TryParse<KeyStatus>(sProp.GetString(), out var s) ? s : KeyStatus.Active;
-            var algo = aProp.GetString() ?? "AES-256-GCM";
-            var created = DateTimeOffset.TryParse(cProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cd) ? cd : DateTimeOffset.UtcNow;
-            DateTimeOffset? expires = DateTimeOffset.TryParse(eProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var ed) ? ed : null;
-            DateTimeOffset? revoked = DateTimeOffset.TryParse(rProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var rd) ? rd : null;
+            var rawBytes = bytesProp.ValueKind == JsonValueKind.String
+                ? Convert.FromBase64String(bytesProp.GetString() ?? string.Empty)
+                : Array.Empty<byte>();
+            var parsedKeyId = idProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(idProp.GetString()) ? KeyIdentifier.Prefixed(idProp.GetString()!) : keyId;
+            var parsedVersion = vProp.ValueKind == JsonValueKind.String && int.TryParse(vProp.GetString(), CultureInfo.InvariantCulture, out var vNum) ? new KeyVersion(vNum) : version;
+            var purpose = pProp.ValueKind == JsonValueKind.String && Enum.TryParse<KeyPurpose>(pProp.GetString(), out var p) ? p : KeyPurpose.Encryption;
+            var status = sProp.ValueKind == JsonValueKind.String && Enum.TryParse<KeyStatus>(sProp.GetString(), out var s) ? s : KeyStatus.Active;
+            var algo = aProp.ValueKind == JsonValueKind.String ? (aProp.GetString() ?? "AES-256-GCM") : "AES-256-GCM";
+            var created = cProp.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(cProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cd) ? cd : DateTimeOffset.UtcNow;
+            DateTimeOffset? expires = eProp.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(eProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var ed) ? ed : null;
+            DateTimeOffset? revoked = rProp.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(rProp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var rd) ? rd : null;
 
             var meta = new KeyMetadata(parsedKeyId, parsedVersion, purpose, status, algo, created, expires, revoked);
             return Result<(KeyMetadata Metadata, byte[] KeyBytes)>.Success((meta, rawBytes));

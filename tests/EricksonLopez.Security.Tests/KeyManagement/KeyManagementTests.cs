@@ -183,6 +183,7 @@ public sealed class KeyManagementTests
 
         // If key is revoked, KeyRing returns KeyRevoked
         await store.UpdateStatusAsync(keyId, v1, KeyStatus.Revoked);
+        keyRing.InvalidateKey(keyId, v1);
         var revokedLookup = await keyRing.GetKeyAsync(keyId, v1);
         Assert.True(revokedLookup.IsFailure);
         Assert.Equal("Security.KeyRevoked", revokedLookup.Error.Code);

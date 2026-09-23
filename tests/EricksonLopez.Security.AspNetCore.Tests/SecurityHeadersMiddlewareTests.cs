@@ -220,6 +220,32 @@ public sealed class SecurityHeadersMiddlewareTests
         context.Response.Headers.ContainsKey("X-Permitted-Cross-Domain-Policies").Should().BeTrue();
     }
 
+    [Fact]
+    public async Task SecurityHeadersMiddleware_DownstreamClearsHeadersWithoutStarting_FinallyRestoresHeaders()
+    {
+        var options = Options.Create(new SecurityHeadersOptions());
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+
+        var middleware = new SecurityHeadersMiddleware(ctx =>
+        {
+            // Simulate downstream clearing headers without starting the response
+            ctx.Response.Headers.Clear();
+            return Task.CompletedTask;
+        }, options);
+
+        await middleware.InvokeAsync(context);
+
+        // Finally block MUST re-apply headers since HasStarted is false
+        context.Response.Headers.ContainsKey("Content-Security-Policy").Should().BeTrue();
+        context.Response.Headers.ContainsKey("Strict-Transport-Security").Should().BeTrue();
+        context.Response.Headers.ContainsKey("X-Content-Type-Options").Should().BeTrue();
+        context.Response.Headers.ContainsKey("X-Frame-Options").Should().BeTrue();
+        context.Response.Headers.ContainsKey("Referrer-Policy").Should().BeTrue();
+        context.Response.Headers.ContainsKey("Permissions-Policy").Should().BeTrue();
+        context.Response.Headers.ContainsKey("X-Permitted-Cross-Domain-Policies").Should().BeTrue();
+    }
+
     private sealed class CustomResponseFeature : Microsoft.AspNetCore.Http.Features.IHttpResponseFeature
     {
         public int StatusCode { get; set; } = 200;
@@ -239,6 +265,11 @@ public sealed class SecurityHeadersMiddlewareTests
             foreach (var (callback, state) in _callbacks)
             {
                 await callback(state);
+            }
+
+            if (Headers is HeaderDictionary dict)
+            {
+                dict.IsReadOnly = true;
             }
         }
     }

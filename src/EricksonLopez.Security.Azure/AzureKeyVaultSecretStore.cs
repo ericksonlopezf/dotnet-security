@@ -116,7 +116,7 @@ public sealed class AzureKeyVaultSecretStore : ISecretStore
 
         try
         {
-            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(normalized, cancellationToken: cancellationToken).ConfigureAwait(false);
+            KeyVaultSecret secret = await _secretClient!.GetSecretAsync(normalized, null, cancellationToken).ConfigureAwait(false);
             return new Redacted<string>(secret.Value);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)

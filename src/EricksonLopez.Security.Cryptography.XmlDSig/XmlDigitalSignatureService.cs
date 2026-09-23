@@ -363,8 +363,7 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
                         return Error.Validation("XmlDigitalSignatureService.InvalidReferenceId", "Malformed signature reference ID format.");
                     }
 
-                    signedElement = signedXml.GetIdElement(document, id)
-                        ?? FindElementByIdSafe(document, id);
+                    signedElement = FindElementByIdSafe(document, id);
                 }
             }
 

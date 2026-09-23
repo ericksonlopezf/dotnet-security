@@ -113,6 +113,21 @@ public sealed class DistributedTotpReplayStoreTests
     }
 
     [Fact]
+    public void TryAdd_WithSyncHandler_InvokesSyncHandlerDirectly()
+    {
+        bool syncCalled = false;
+        bool asyncCalled = false;
+        var store = new DelegateTotpReplayStore(
+            (k, e, ct) => { asyncCalled = true; return ValueTask.FromResult(false); },
+            (k, e) => { syncCalled = true; return true; });
+
+        var result = store.TryAdd("test-key", DateTimeOffset.UtcNow);
+        result.Should().BeTrue();
+        syncCalled.Should().BeTrue();
+        asyncCalled.Should().BeFalse();
+    }
+
+    [Fact]
     public void Constructor_NullAsyncHandler_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => new DelegateTotpReplayStore(null!, null));

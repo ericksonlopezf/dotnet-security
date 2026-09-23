@@ -241,5 +241,96 @@ public sealed class Pbkdf2PasswordHasherTests
         var hash65Bytes = Convert.ToBase64String(new byte[65]);
         _sut.VerifyPassword("pass".AsSpan(), $"PBKDF2.V1$1000${validSaltStr}${hash65Bytes}").Should().Be(PasswordVerificationResult.Failed);
     }
+
+    [Fact]
+    public void VerifyTier2Pbkdf2Format_ValidHash_ReturnsSuccessRehashNeeded()
+    {
+        var salt = new byte[16];
+        var derived = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("CorrectPassword", salt, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64);
+        var tier2Hash = $"$pbkdf2-sha512$i=1000$s={Convert.ToBase64String(salt)}${Convert.ToBase64String(derived)}";
+
+        _sut.VerifyPassword("CorrectPassword".AsSpan(), tier2Hash).Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+        _sut.VerifyPassword("WrongPassword".AsSpan(), tier2Hash).Should().Be(PasswordVerificationResult.Failed);
+        _sut.NeedsRehash(tier2Hash).Should().BeTrue();
+    }
+
+    [Fact]
+    public void VerifyTier2Pbkdf2Format_MalformedStructure_ReturnsFailed()
+    {
+        var salt = Convert.ToBase64String(new byte[16]);
+        var hash = Convert.ToBase64String(new byte[32]);
+
+        // Missing parts
+        _sut.VerifyPassword("pass".AsSpan(), "$pbkdf2-sha512$i=1000").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt}${hash}$extra").Should().Be(PasswordVerificationResult.Failed);
+
+        // Wrong parameter prefixes
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$x=1000$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$x={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+
+        // Invalid iterations
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=abc$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=0$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=-10$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000001$s={salt}${hash}").Should().Be(PasswordVerificationResult.Failed);
+
+        // Iteration boundary: 1 iteration and 1_000_000 iterations
+        var derived1 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 1, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        var hash1 = $"$pbkdf2-sha512$i=1$s={salt}${Convert.ToBase64String(derived1)}";
+        _sut.VerifyPassword("pass".AsSpan(), hash1).Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+
+        var hashMax = $"$pbkdf2-sha512$i=1000000$s={salt}${hash}";
+        _sut.VerifyPassword("wrong".AsSpan(), hashMax).Should().Be(PasswordVerificationResult.Failed);
+    }
+
+    [Fact]
+    public void VerifyTier2Pbkdf2Format_BoundariesAndInvalidBase64_EnforcedProperly()
+    {
+        var validSaltStr = Convert.ToBase64String(new byte[16]);
+        var validHashStr = Convert.ToBase64String(new byte[32]);
+
+        // String length boundaries:
+        // parts[2] length: min 13, max 130 (includes "s=")
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={new string('A', 10)}${validHashStr}").Should().Be(PasswordVerificationResult.Failed); // len 12
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={new string('A', 129)}${validHashStr}").Should().Be(PasswordVerificationResult.Failed); // len 131
+
+        // parts[3] length: min 22, max 128
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${new string('A', 21)}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${new string('A', 129)}").Should().Be(PasswordVerificationResult.Failed);
+
+        // Invalid base64 characters
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s=invalid!!!base64${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}$invalid!!!base64!").Should().Be(PasswordVerificationResult.Failed);
+
+        // Decoded byte boundaries:
+        // Salt: 8 <= saltBytesWritten <= 64
+        var salt7Bytes = Convert.ToBase64String(new byte[7]);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt7Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+
+        var salt8Bytes = Convert.ToBase64String(new byte[8]);
+        var derived8 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[8], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt8Bytes}${Convert.ToBase64String(derived8)}").Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+
+        var salt64Bytes = Convert.ToBase64String(new byte[64]);
+        var derived64 = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[64], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt64Bytes}${Convert.ToBase64String(derived64)}").Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+
+        var salt65Bytes = Convert.ToBase64String(new byte[65]);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={salt65Bytes}${validHashStr}").Should().Be(PasswordVerificationResult.Failed);
+
+        // Hash: 16 <= hashBytesWritten <= 64
+        var hash15Bytes = Convert.ToBase64String(new byte[15]);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${hash15Bytes}").Should().Be(PasswordVerificationResult.Failed);
+
+        var hash16Bytes = Convert.ToBase64String(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 16));
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${hash16Bytes}").Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+
+        var hash64Bytes = Convert.ToBase64String(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("pass", new byte[16], 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 64));
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${hash64Bytes}").Should().Be(PasswordVerificationResult.SuccessRehashNeeded);
+
+        var hash65Bytes = Convert.ToBase64String(new byte[65]);
+        _sut.VerifyPassword("pass".AsSpan(), $"$pbkdf2-sha512$i=1000$s={validSaltStr}${hash65Bytes}").Should().Be(PasswordVerificationResult.Failed);
+    }
 }
 

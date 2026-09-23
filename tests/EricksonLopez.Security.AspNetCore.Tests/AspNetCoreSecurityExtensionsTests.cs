@@ -107,6 +107,65 @@ public sealed class AspNetCoreSecurityExtensionsTests
         hasher.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task AddApiKeySupport_RegistersSchemeWithExpectedDefaults()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var authBuilder = services.AddAuthentication();
+        var returnedBuilder = authBuilder.AddApiKeySupport();
+
+        returnedBuilder.Should().BeSameAs(authBuilder);
+
+        using var provider = services.BuildServiceProvider();
+        var schemeProvider = provider.GetRequiredService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
+        var scheme = await schemeProvider.GetSchemeAsync("ApiKey");
+
+        scheme.Should().NotBeNull();
+        scheme!.Name.Should().Be("ApiKey");
+        scheme.DisplayName.Should().Be("API Key Authentication");
+        scheme.HandlerType.Should().Be<ApiKeyAuthenticationHandler>();
+
+        var options = provider.GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>().Get("ApiKey");
+        options.Should().NotBeNull();
+        options.HeaderName.Should().Be("X-Api-Key");
+    }
+
+    [Fact]
+    public async Task AddApiKeySupport_WithCustomOptions_AppliesConfigurations()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthentication().AddApiKeySupport(opt =>
+        {
+            opt.HeaderName = "X-Custom-Key";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var schemeProvider = provider.GetRequiredService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
+        var scheme = await schemeProvider.GetSchemeAsync("ApiKey");
+
+        scheme.Should().NotBeNull();
+        var options = provider.GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>().Get("ApiKey");
+        options.HeaderName.Should().Be("X-Custom-Key");
+    }
+
+    [Fact]
+    public async Task AddApiKeySupport_WithNullAction_RegistersSuccessfully()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthentication().AddApiKeySupport(null);
+
+        using var provider = services.BuildServiceProvider();
+        var schemeProvider = provider.GetRequiredService<Microsoft.AspNetCore.Authentication.IAuthenticationSchemeProvider>();
+        var scheme = await schemeProvider.GetSchemeAsync("ApiKey");
+
+        scheme.Should().NotBeNull();
+        var options = provider.GetRequiredService<IOptionsMonitor<ApiKeyAuthenticationOptions>>().Get("ApiKey");
+        options.HeaderName.Should().Be("X-Api-Key");
+    }
+
     private sealed class StubPasswordHasher : EricksonLopez.Security.Abstractions.Passwords.IPasswordHasher
     {
         public EricksonLopez.Security.Abstractions.Passwords.PasswordHashAlgorithm Algorithm => EricksonLopez.Security.Abstractions.Passwords.PasswordHashAlgorithm.Argon2id;

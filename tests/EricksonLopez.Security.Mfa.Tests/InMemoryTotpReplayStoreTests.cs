@@ -13,9 +13,11 @@ public sealed class InMemoryTotpReplayStoreTests
     [Fact]
     public void Constructor_InvalidArguments_ThrowsArgumentOutOfRangeException()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: 0));
+        var ex1 = Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: 0));
+        ex1.Message.Should().Contain("Maximum capacity must be greater than zero.");
         Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: -1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: 0));
+        var ex2 = Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: 0));
+        ex2.Message.Should().Contain("Prune threshold must be greater than zero.");
         Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: -1));
     }
 
@@ -97,5 +99,75 @@ public sealed class InMemoryTotpReplayStoreTests
 
         var duplicate = await store.TryAddAsync("key-async", DateTimeOffset.UtcNow.AddMinutes(5));
         duplicate.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryAdd_ExactlyAtPruneThreshold_DoesNotPrune()
+    {
+        var store = new InMemoryTotpReplayStore(maxCapacity: 100, pruneThreshold: 2);
+        var expired = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var unexpired = DateTimeOffset.UtcNow.AddMinutes(5);
+
+        store.TryAdd("expired-1", expired).Should().BeTrue();
+        store.TryAdd("unexpired-2", unexpired).Should().BeTrue();
+
+        // Exactly at prune threshold (2), Count > pruneThreshold is false, expired-1 should NOT be pruned yet
+        store.ConsumedCodes.ContainsKey("expired-1").Should().BeTrue();
+    }
+
+    [Fact]
+    public void PruneExpiredCodes_ThrottlesWhenUnderCapacityWithinOneSecond()
+    {
+        var store = new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: 5);
+        var now = DateTimeOffset.UtcNow;
+
+        // Initial prune to set lastTicks
+        store.PruneExpiredCodes(now);
+
+        // Add expired entry
+        store.TryAdd("key-exp", now.AddSeconds(-10)).Should().BeTrue();
+
+        // Call prune within 500ms when Count < maxCapacity -> throttled (returns immediately)
+        store.PruneExpiredCodes(now.AddMilliseconds(500));
+        store.ConsumedCodes.ContainsKey("key-exp").Should().BeTrue();
+
+        // Call prune after 1.1s -> throttle elapsed, pruned!
+        store.PruneExpiredCodes(now.AddSeconds(1.1));
+        store.ConsumedCodes.ContainsKey("key-exp").Should().BeFalse();
+    }
+
+    [Fact]
+    public void PruneExpiredCodes_BypassesThrottleWhenAtMaxCapacity()
+    {
+        var store = new InMemoryTotpReplayStore(maxCapacity: 2, pruneThreshold: 1);
+        var now = DateTimeOffset.UtcNow;
+
+        store.PruneExpiredCodes(now);
+
+        // Fill to max capacity with 1 expired and 1 unexpired
+        store.TryAdd("key-exp", now.AddSeconds(-10)).Should().BeTrue();
+        store.TryAdd("key-act", now.AddMinutes(5)).Should().BeTrue();
+
+        // Even within 100ms, because Count == maxCapacity, throttle is bypassed and prune runs!
+        store.PruneExpiredCodes(now.AddMilliseconds(100));
+        store.ConsumedCodes.ContainsKey("key-exp").Should().BeFalse();
+        store.ConsumedCodes.ContainsKey("key-act").Should().BeTrue();
+    }
+
+    [Fact]
+    public void PruneExpiredCodes_ExactExpiryTimestamp_IsNotPruned()
+    {
+        var store = new InMemoryTotpReplayStore(maxCapacity: 10, pruneThreshold: 5);
+        var now = DateTimeOffset.UtcNow;
+
+        store.TryAdd("key-exact", now).Should().BeTrue();
+        store.TryAdd("key-strictly-past", now.AddTicks(-1)).Should().BeTrue();
+
+        store.PruneExpiredCodes(now);
+
+        // key-exact expiresAt == now, so kvp.Value < now is false -> NOT pruned
+        store.ConsumedCodes.ContainsKey("key-exact").Should().BeTrue();
+        // key-strictly-past expiresAt < now -> pruned
+        store.ConsumedCodes.ContainsKey("key-strictly-past").Should().BeFalse();
     }
 }

@@ -295,4 +295,30 @@ public sealed class HaveIBeenPwnedClientTests
         result.Value.BreachCount.Should().Be(777);
         result.Value.HashPrefix.Should().Be(prefix);
     }
+
+    [Theory]
+    [InlineData(84)] // maxByteCount = 255 <= 256 (stackalloc)
+    [InlineData(85)] // maxByteCount = 258 > 256 (ArrayPool.Rent)
+    [SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms", Justification = "Testing SHA-1 calculation for HIBP range query.")]
+    public async Task CheckPasswordAsync_BoundaryPasswords_Around256MaxBytes_ComputesCorrectSha1(int length)
+    {
+        var password = new string('B', length);
+        var hashBytes = SHA1.HashData(Encoding.UTF8.GetBytes(password));
+        var fullHex = Convert.ToHexString(hashBytes);
+        var prefix = fullHex[..5];
+        var suffix = fullHex[5..];
+
+        var responseBody = $"{suffix}:123\r\n";
+        var handler = new TestHttpMessageHandler(responseBody, HttpStatusCode.OK);
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.pwnedpasswords.com/") };
+        var options = Options.Create(new HibpOptions());
+        var client = new HaveIBeenPwnedClient(httpClient, options, NullLogger<HaveIBeenPwnedClient>.Instance);
+
+        var result = await client.CheckPasswordAsync(password);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsPwned.Should().BeTrue();
+        result.Value.BreachCount.Should().Be(123);
+        result.Value.HashPrefix.Should().Be(prefix);
+    }
 }

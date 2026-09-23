@@ -53,16 +53,33 @@ public sealed class SecurityMfaServiceCollectionExtensionsTests
     public void AddDistributedTotpReplayStore_Generic_NullServices_ThrowsArgumentNullException()
     {
         IServiceCollection services = null!;
-        Assert.Throws<ArgumentNullException>(() => services.AddDistributedTotpReplayStore<InMemoryTotpReplayStore>());
+        var ex = Assert.Throws<ArgumentNullException>("services", () => services.AddDistributedTotpReplayStore<InMemoryTotpReplayStore>());
+        ex.ParamName.Should().Be("services");
     }
 
     [Fact]
     public void AddDistributedTotpReplayStore_Delegate_NullArguments_ThrowsArgumentNullException()
     {
         IServiceCollection nullServices = null!;
-        Assert.Throws<ArgumentNullException>(() => nullServices.AddDistributedTotpReplayStore((k, e, ct) => System.Threading.Tasks.ValueTask.FromResult(true)));
+        var ex1 = Assert.Throws<ArgumentNullException>("services", () => nullServices.AddDistributedTotpReplayStore((k, e, ct) => System.Threading.Tasks.ValueTask.FromResult(true)));
+        ex1.ParamName.Should().Be("services");
 
         var services = new ServiceCollection();
-        Assert.Throws<ArgumentNullException>(() => services.AddDistributedTotpReplayStore(null!));
+        var ex2 = Assert.Throws<ArgumentNullException>("asyncHandler", () => services.AddDistributedTotpReplayStore(null!));
+        ex2.ParamName.Should().Be("asyncHandler");
+    }
+
+    [Fact]
+    public void AddDistributedTotpReplayStore_Delegate_WithSyncHandler_RegistersCustomStore()
+    {
+        var services = new ServiceCollection();
+        var returned = services.AddDistributedTotpReplayStore(
+            (k, e, ct) => System.Threading.Tasks.ValueTask.FromResult(true),
+            (k, e) => true);
+        returned.Should().BeSameAs(services);
+
+        using var provider = services.BuildServiceProvider();
+        var replay = provider.GetService<ITotpReplayStore>();
+        replay.Should().NotBeNull().And.BeOfType<DelegateTotpReplayStore>();
     }
 }
