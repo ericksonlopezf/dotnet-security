@@ -49,9 +49,38 @@ public sealed class DependencyInjectionTests
         Assert.NotNull(provider.GetService<IKeyRing>());
         Assert.NotNull(provider.GetService<IEncryptionKeyProvider>());
         Assert.NotNull(provider.GetService<IKeyLifecycleManager>());
+        Assert.NotNull(provider.GetService<IKeyRevocationNotifier>());
 
         var ex = Assert.Throws<ArgumentNullException>(() => SecurityServiceCollectionExtensions.AddKeyManagement(null!));
         Assert.DoesNotContain("AddSecurityCore", ex.StackTrace);
+    }
+
+    [Fact]
+    public void AddDistributedKeyRevocationNotifier_RegistersDelegateNotifier()
+    {
+        var services = new ServiceCollection();
+        Func<EricksonLopez.Security.Abstractions.Primitives.KeyIdentifier, EricksonLopez.Security.Abstractions.Primitives.KeyVersion, EricksonLopez.Security.Abstractions.Primitives.KeyPurpose, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask> handler =
+            (id, v, p, ct) => System.Threading.Tasks.ValueTask.CompletedTask;
+
+        var returned = services.AddDistributedKeyRevocationNotifier(handler);
+        Assert.Same(services, returned);
+
+        using var provider = services.BuildServiceProvider();
+        var notifier = provider.GetService<IKeyRevocationNotifier>();
+        Assert.NotNull(notifier);
+
+        // Null checks
+        Assert.Throws<ArgumentNullException>("services", () => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(null!, handler));
+        Assert.Throws<ArgumentNullException>("publishHandler", () => services.AddDistributedKeyRevocationNotifier((Func<EricksonLopez.Security.Abstractions.Primitives.KeyIdentifier, EricksonLopez.Security.Abstractions.Primitives.KeyVersion, EricksonLopez.Security.Abstractions.Primitives.KeyPurpose, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>)null!));
+
+        // Factory overload
+        var servicesFactory = new ServiceCollection();
+        servicesFactory.AddDistributedKeyRevocationNotifier(sp => handler);
+        using var providerFactory = servicesFactory.BuildServiceProvider();
+        Assert.NotNull(providerFactory.GetService<IKeyRevocationNotifier>());
+
+        Assert.Throws<ArgumentNullException>("services", () => SecurityServiceCollectionExtensions.AddDistributedKeyRevocationNotifier(null!, sp => handler));
+        Assert.Throws<ArgumentNullException>("publishHandlerFactory", () => services.AddDistributedKeyRevocationNotifier((Func<IServiceProvider, Func<EricksonLopez.Security.Abstractions.Primitives.KeyIdentifier, EricksonLopez.Security.Abstractions.Primitives.KeyVersion, EricksonLopez.Security.Abstractions.Primitives.KeyPurpose, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>>)null!));
     }
 
     [Fact]

@@ -864,4 +864,166 @@ public sealed class KeyManagementTests
         newActiveKey.Version.Value.Should().BeGreaterThan(key2Metadata.Version.Value,
             "The new active key should have a higher version than the previously highest Active key");
     }
+
+    [Fact]
+    public async Task InMemoryKeyStore_Capacity_EnforcesMaxKeys()
+    {
+        var store = new InMemoryKeyStore();
+
+        // Fill store up to MaxKeys
+        for (int i = 0; i < InMemoryKeyStore.MaxKeys; i++)
+        {
+            var meta = new KeyMetadata(new KeyIdentifier($"key_{i}"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+            using var buf = SecretBuffer.FromSpan([1, 2, 3]);
+            var k = new CryptographicKey(meta, buf);
+            var res = await store.SaveKeyAsync(k);
+            res.IsSuccess.Should().BeTrue();
+        }
+
+        // Updating an existing key must SUCCEED even at capacity
+        var existingMeta = new KeyMetadata(new KeyIdentifier("key_0"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+        using var existingBuf = SecretBuffer.FromSpan([4, 5, 6]);
+        var existingKey = new CryptographicKey(existingMeta, existingBuf);
+        var updateRes = await store.SaveKeyAsync(existingKey);
+        updateRes.IsSuccess.Should().BeTrue("Updating existing key should succeed at capacity");
+
+        // Adding a NEW key must FAIL with StoreCapacityExceeded
+        var newMeta = new KeyMetadata(new KeyIdentifier($"key_{InMemoryKeyStore.MaxKeys}"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+        using var newBuf = SecretBuffer.FromSpan([7, 8, 9]);
+        var newKey = new CryptographicKey(newMeta, newBuf);
+        var failRes = await store.SaveKeyAsync(newKey);
+        failRes.IsFailure.Should().BeTrue("Adding key beyond capacity must fail");
+        failRes.Error.Code.Should().Be("Security.StoreCapacityExceeded");
+    }
+
+    [Fact]
+    public async Task KeyLifecycleManager_VersionDerivation_And_ZeroActiveKeysRotation()
+    {
+        var store = new InMemoryKeyStore();
+        using var lifecycle = new KeyLifecycleManager(store);
+
+        // 1. Keys exist for a different purpose: highest is null branch -> returns KeyVersion.Initial
+        var signingMeta = new KeyMetadata(new KeyIdentifier("sign_key"), KeyVersion.Initial, KeyPurpose.Signing, KeyStatus.Active, "HMAC", DateTimeOffset.UtcNow);
+        using var signingBuf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(signingMeta, signingBuf));
+
+        var encKey1 = await lifecycle.GenerateAndActivateKeyAsync(KeyPurpose.Encryption);
+        encKey1.IsSuccess.Should().BeTrue();
+        encKey1.Value.Metadata.Version.Should().Be(KeyVersion.Initial);
+        encKey1.Value.Dispose();
+
+        // 2. Multiple versions exist (v1 and v3): MaxBy returns v3 -> Next() returns v4 (MinBy would return v2)
+        var v3 = new KeyVersion(3);
+        var encMeta3 = new KeyMetadata(encKey1.Value.Metadata.KeyId, v3, KeyPurpose.Encryption, KeyStatus.Retired, "AES", DateTimeOffset.UtcNow);
+        using var encBuf3 = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(encMeta3, encBuf3));
+
+        var encKeyNext = await lifecycle.GenerateAndActivateKeyAsync(KeyPurpose.Encryption);
+        encKeyNext.IsSuccess.Should().BeTrue();
+        encKeyNext.Value.Metadata.Version.Value.Should().Be(4, "Next version must be derived from MaxBy(version) which is 3 + 1 = 4");
+        encKeyNext.Value.Dispose();
+
+        // 3. Rotation when activeKeys.Count == 0: retire keys for purpose TokenProtection
+        var tokenKey = await lifecycle.RotateKeyAsync(KeyPurpose.TokenProtection);
+        tokenKey.IsSuccess.Should().BeTrue();
+        tokenKey.Value.Dispose();
+    }
+
+    private sealed class CountingKeyStore : IKeyStore
+    {
+        private readonly InMemoryKeyStore _inner = new();
+        public int GetKeyCount { get; private set; }
+        public int ListMetadataCount { get; private set; }
+
+        public ValueTask<Result> SaveKeyAsync(CryptographicKey key, CancellationToken cancellationToken = default) =>
+            _inner.SaveKeyAsync(key, cancellationToken);
+
+        public async ValueTask<Result<CryptographicKey>> GetKeyAsync(KeyIdentifier keyId, KeyVersion version, CancellationToken cancellationToken = default)
+        {
+            GetKeyCount++;
+            return await _inner.GetKeyAsync(keyId, version, cancellationToken);
+        }
+
+        public async ValueTask<Result<IReadOnlyList<KeyMetadata>>> ListMetadataAsync(KeyPurpose? purpose = null, CancellationToken cancellationToken = default)
+        {
+            ListMetadataCount++;
+            return await _inner.ListMetadataAsync(purpose, cancellationToken);
+        }
+
+        public ValueTask<Result> UpdateStatusAsync(KeyIdentifier keyId, KeyVersion version, KeyStatus newStatus, CancellationToken cancellationToken = default) =>
+            _inner.UpdateStatusAsync(keyId, version, newStatus, cancellationToken);
+    }
+
+    [Fact]
+    public async Task KeyRing_Caching_TtlAndPruning_BehavesCorrectly()
+    {
+        var store = new CountingKeyStore();
+        var keyId = KeyIdentifier.New();
+        var v1 = KeyVersion.Initial;
+        var meta = new KeyMetadata(keyId, v1, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        using var buf = SecretBuffer.CreateRandom(32);
+        await store.SaveKeyAsync(new CryptographicKey(meta, buf));
+
+        var options = new KeyRingOptions { CacheTtl = TimeSpan.FromMinutes(10) };
+        var ring = new KeyRing(store, options);
+
+        // 1. GetActiveKeyAsync: first call hits store for metadata and key
+        var active1 = await ring.GetActiveKeyAsync(KeyPurpose.Encryption);
+        active1.IsSuccess.Should().BeTrue();
+        store.ListMetadataCount.Should().Be(1);
+        store.GetKeyCount.Should().Be(1);
+
+        // Second call comes from _activeKeyCache
+        var active2 = await ring.GetActiveKeyAsync(KeyPurpose.Encryption);
+        active2.IsSuccess.Should().BeTrue();
+        store.ListMetadataCount.Should().Be(1, "Second active key lookup should come from active key cache");
+        store.GetKeyCount.Should().Be(1);
+
+        active1.Value.Dispose();
+        active2.Value.Dispose();
+
+        // 2. InvalidateActiveKey: clears active key cache; next call queries metadata from store, while key is in _keyCache
+        ring.InvalidateActiveKey(KeyPurpose.Encryption);
+        var active3 = await ring.GetActiveKeyAsync(KeyPurpose.Encryption);
+        active3.IsSuccess.Should().BeTrue();
+        store.ListMetadataCount.Should().Be(2, "Lookup after active key invalidation must query metadata store");
+        store.GetKeyCount.Should().Be(1, "Key itself is still cached in _keyCache");
+        active3.Value.Dispose();
+
+        // 3. GetKeyAsync: key already cached in _keyCache
+        var key1 = await ring.GetKeyAsync(keyId, v1);
+        key1.IsSuccess.Should().BeTrue();
+        store.GetKeyCount.Should().Be(1);
+
+        // 4. InvalidateKey: invalidates _keyCache; next call must query store for key
+        ring.InvalidateKey(keyId, v1);
+        var key2 = await ring.GetKeyAsync(keyId, v1);
+        key2.IsSuccess.Should().BeTrue();
+        store.GetKeyCount.Should().Be(2, "Lookup after specific key invalidation must query store");
+
+        key1.Value.Dispose();
+        key2.Value.Dispose();
+
+        // 5. InvalidateAll: both active and specific caches cleared
+        ring.InvalidateAll();
+        var key3 = await ring.GetKeyAsync(keyId, v1);
+        key3.IsSuccess.Should().BeTrue();
+        store.GetKeyCount.Should().Be(3, "Lookup after InvalidateAll must query store");
+        key3.Value.Dispose();
+
+        // 6. Test MaxKeyCacheCapacity (1000) pruning: insert 1005 keys into ring
+        for (int i = 0; i < 1005; i++)
+        {
+            var tempId = new KeyIdentifier($"temp_{i}");
+            var tempMeta = new KeyMetadata(tempId, KeyVersion.Initial, KeyPurpose.Signing, KeyStatus.Active, "AES", DateTimeOffset.UtcNow);
+            using var tempBuf = SecretBuffer.CreateRandom(32);
+            await store.SaveKeyAsync(new CryptographicKey(tempMeta, tempBuf));
+            var tempRes = await ring.GetKeyAsync(tempId, KeyVersion.Initial);
+            tempRes.IsSuccess.Should().BeTrue();
+            tempRes.Value.Dispose();
+        }
+
+        // ClearCache
+        ring.ClearCache();
+    }
 }

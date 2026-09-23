@@ -65,7 +65,10 @@ public sealed class Pkcs11ConstantsAndDiTests
     [Fact]
     public void DependencyInjection_AddEricksonLopezPkcs11_Guards_ThrowOnInvalidInput()
     {
-        Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddEricksonLopezPkcs11("path", 1));
+        var exNullServices = Assert.Throws<ArgumentNullException>(() => ((IServiceCollection)null!).AddEricksonLopezPkcs11("path", 1));
+        exNullServices.ParamName.Should().Be("services");
+        exNullServices.StackTrace.Should().NotContain("ServiceCollectionServiceExtensions");
+
         Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddEricksonLopezPkcs11(null!, 1));
         Assert.Throws<ArgumentException>(() => new ServiceCollection().AddEricksonLopezPkcs11("", 1));
         Assert.Throws<ArgumentException>(() => new ServiceCollection().AddEricksonLopezPkcs11("   ", 1));

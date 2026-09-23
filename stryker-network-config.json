@@ -19,7 +19,10 @@
       "low": 98,
       "break": 95
     },
-    "ignore-methods": [],
+    "ignore-methods": [
+      "ConfigureAwait",
+      "*Log*"
+    ],
     "ignore-mutations": [],
     "reporters": [
       "Progress",

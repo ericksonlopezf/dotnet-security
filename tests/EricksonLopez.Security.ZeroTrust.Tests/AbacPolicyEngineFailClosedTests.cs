@@ -50,8 +50,9 @@ public sealed class AbacPolicyEngineFailClosedTests
         failClosedResult.Status.Should().Be(AbacDecisionStatus.Deny,
             because: "A PEP should never grant access when no policy matches the request context");
         failClosedResult.IsPermitted.Should().BeFalse();
-        failClosedResult.Reason.Should().Contain("Fail-closed",
-            because: "the reason should clearly indicate fail-closed semantics were applied");
+        failClosedResult.Reason.Should().Be(
+            "Fail-closed: No applicable policy found for the request context. Access denied by default. " +
+            "Ensure a policy with a matching AppliesTo predicate is registered for this resource type.");
     }
 
     [Fact]

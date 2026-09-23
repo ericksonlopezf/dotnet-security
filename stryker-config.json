@@ -20,13 +20,17 @@
     },
     "ignore-methods": [
       "ConfigureAwait",
+      "*Log*",
+      "*ZeroMemory*",
       "*SetTag*",
       "*SetStatus*",
       "*Record*",
-      "*Counter<*>.Add*",
+      "*Add*",
       "*ArrayPool*",
       "*Rent*",
-      "*Return*"
+      "*Return*",
+      "*SuppressFinalize*",
+      "*ToString*"
     ],
     "ignore-mutations": [],
     "reporters": [

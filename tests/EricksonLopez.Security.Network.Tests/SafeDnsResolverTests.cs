@@ -331,6 +331,39 @@ public sealed class SafeDnsResolverTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("SafeDnsResolver.AmbiguousIpFormat");
     }
+
+    [Theory]
+    [InlineData("192.168..1")]
+    [InlineData("192.168.01.abc")]
+    [InlineData("192.168.1.x")]
+    public async Task ResolveAndValidateAsync_NumericHostWithEmptyOrNonDigits_DoesNotTriggerAmbiguousFormat(string host)
+    {
+        var result = await _resolver.ResolveAndValidateAsync(host);
+
+        // Should fail due to DNS failure, but NOT AmbiguousIpFormat
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().NotBe("SafeDnsResolver.AmbiguousIpFormat");
+    }
+
+    [Fact]
+    public async Task ResolveAndValidateAsync_IPv4MappedIPv6Address_ValidatesMappedIPv4Rules()
+    {
+        // ::ffff:127.0.0.1 is mapped to 127.0.0.1 -> blocked by prohibited network range
+        var loopbackResult = await _resolver.ResolveAndValidateAsync("::ffff:127.0.0.1");
+        loopbackResult.IsFailure.Should().BeTrue();
+        loopbackResult.Error.Code.Should().Be("SafeDnsResolver.ProhibitedIpRange");
+        loopbackResult.Error.Description.Should().Contain("'127.0.0.1'");
+
+        // ::ffff:192.168.1.1 is mapped to 192.168.1.1 -> blocked by prohibited network range
+        var privateResult = await _resolver.ResolveAndValidateAsync("::ffff:192.168.1.1");
+        privateResult.IsFailure.Should().BeTrue();
+        privateResult.Error.Code.Should().Be("SafeDnsResolver.ProhibitedIpRange");
+        privateResult.Error.Description.Should().Contain("'192.168.1.1'");
+
+        // Pure IPv6 address like 2606:4700:4700::1111 (Cloudflare DNS) is not IPv4-mapped -> valid
+        var pureIpv6Result = await _resolver.ResolveAndValidateAsync("2606:4700:4700::1111");
+        pureIpv6Result.IsSuccess.Should().BeTrue();
+    }
 }
 
 

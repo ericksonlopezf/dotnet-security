@@ -156,7 +156,7 @@ public sealed class LegacyPbkdf2PasswordHasher : IPasswordHasher
         string saltBase64 = Convert.ToBase64String(salt);
         string hashBase64 = Convert.ToBase64String(derivedKey);
 
-        ScrubEphemeralMemory(derivedKey);
+        CryptographicOperations.ZeroMemory(derivedKey);
 
         sw.Stop();
         SecurityMeter.LegacyPbkdf2HashingDurationMs.Record(sw.Elapsed.TotalMilliseconds);
@@ -274,9 +274,9 @@ public sealed class LegacyPbkdf2PasswordHasher : IPasswordHasher
         }
         finally
         {
-            ScrubEphemeralMemory(computedHash);
-            ScrubEphemeralMemory(expectedHash);
-            ScrubEphemeralMemory(salt);
+            CryptographicOperations.ZeroMemory(computedHash);
+            CryptographicOperations.ZeroMemory(expectedHash);
+            CryptographicOperations.ZeroMemory(salt);
         }
     }
 
@@ -288,16 +288,7 @@ public sealed class LegacyPbkdf2PasswordHasher : IPasswordHasher
             return true;
         }
 
-        bool isNativeFormat = hashedPassword.StartsWith(ModularCryptPrefix, StringComparison.Ordinal);
-        bool isSpoofedFormat = hashedPassword.StartsWith(LegacySpoofedArgon2idPrefix, StringComparison.Ordinal);
-
-        if (!isNativeFormat && !isSpoofedFormat)
-        {
-            return true;
-        }
-
-        // If it's the spoofed format, we ALWAYS want to rehash it to the honest native format
-        if (isSpoofedFormat)
+        if (!hashedPassword.StartsWith(ModularCryptPrefix, StringComparison.Ordinal))
         {
             return true;
         }
@@ -335,6 +326,4 @@ public sealed class LegacyPbkdf2PasswordHasher : IPasswordHasher
         return false;
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    private static void ScrubEphemeralMemory(Span<byte> buffer) => CryptographicOperations.ZeroMemory(buffer);
 }

@@ -63,20 +63,84 @@ public sealed class GoogleCloudAdaptersTests
     public void GoogleCloud_DefaultOptions_ThrowsInvalidOperationException_WhenStubNotEnabled()
     {
         var defaultOptions = Options.Create(new GoogleCloudSecurityOptions());
-        Assert.Throws<InvalidOperationException>(() => new GoogleCloudSecretManagerStore(defaultOptions));
-        Assert.Throws<InvalidOperationException>(() => new GoogleCloudKmsKeyStore(defaultOptions));
+        var exSecret = Assert.Throws<InvalidOperationException>(() => new GoogleCloudSecretManagerStore(defaultOptions));
+        exSecret.Message.Should().Contain("GoogleCloudSecretManagerStore requires configured ProjectId");
+
+        var exKey = Assert.Throws<InvalidOperationException>(() => new GoogleCloudKmsKeyStore(defaultOptions));
+        exKey.Message.Should().Contain("GoogleCloudKmsKeyStore requires configured ProjectId");
+
+        var whitespaceOptions = Options.Create(new GoogleCloudSecurityOptions { ProjectId = "   " });
+        Assert.Throws<InvalidOperationException>(() => new GoogleCloudSecretManagerStore(whitespaceOptions));
+        Assert.Throws<InvalidOperationException>(() => new GoogleCloudKmsKeyStore(whitespaceOptions));
     }
 
     [Fact]
     public void GoogleCloudSecretStore_NullOptions_ThrowsArgumentNullException()
     {
+        var options = CreateOptions();
         Assert.Throws<ArgumentNullException>(() => new GoogleCloudSecretManagerStore(null!));
+        Assert.Throws<ArgumentNullException>(() => new GoogleCloudSecretManagerStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<GoogleCloudSecretManagerStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new GoogleCloudSecretManagerStore(options, null!));
     }
 
     [Fact]
     public void GoogleCloudKeyStore_NullOptions_ThrowsArgumentNullException()
     {
+        var options = CreateOptions();
         Assert.Throws<ArgumentNullException>(() => new GoogleCloudKmsKeyStore(null!));
+        Assert.Throws<ArgumentNullException>(() => new GoogleCloudKmsKeyStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<GoogleCloudKmsKeyStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new GoogleCloudKmsKeyStore(options, null!));
+    }
+
+    [Fact]
+    public void AddGoogleCloudSecurity_RegistersServicesAndValidatesNullArguments()
+    {
+        IServiceCollection nullServices = null!;
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddGoogleCloudSecurity());
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddGoogleCloudSecurity(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddGoogleCloudSecurity(null!));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        services.AddGoogleCloudSecurity(o => o.EnableDevelopmentInMemoryStub = true);
+
+        using var provider = services.BuildServiceProvider();
+        var keyStore = provider.GetRequiredService<IKeyStore>();
+        var secretStore = provider.GetRequiredService<ISecretStore>();
+
+        keyStore.Should().NotBeNull().And.BeOfType<GoogleCloudKmsKeyStore>();
+        secretStore.Should().NotBeNull().And.BeOfType<GoogleCloudSecretManagerStore>();
+
+        var defaultServices = new ServiceCollection();
+        defaultServices.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        defaultServices.AddGoogleCloudSecurity();
+        using var defaultProvider = defaultServices.BuildServiceProvider();
+        defaultProvider.GetRequiredService<IOptions<GoogleCloudSecurityOptions>>().Value.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GoogleCloud_Stores_Dispose_ClearsResources()
+    {
+        var options = CreateOptions();
+        var keyStore = new GoogleCloudKmsKeyStore(options);
+
+        var keyId = KeyIdentifier.Prefixed("gcp-disp");
+        var version = KeyVersion.Initial;
+        var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256", DateTimeOffset.UtcNow);
+        var key = new CryptographicKey(metadata, SecretBuffer.CreateRandom(32));
+
+        var saveResult = await keyStore.SaveKeyAsync(key);
+        saveResult.IsSuccess.Should().BeTrue();
+
+        keyStore.Dispose();
+
+        // Calling Dispose multiple times should be safe
+        keyStore.Dispose();
+
+        // Stored in-memory keys are cleared upon disposal
+        var getAfterDispose = await keyStore.GetKeyAsync(keyId, version);
+        getAfterDispose.IsFailure.Should().BeTrue();
+        getAfterDispose.Error.Code.Should().Be("Security.KeyNotFound");
     }
 
     [Fact]

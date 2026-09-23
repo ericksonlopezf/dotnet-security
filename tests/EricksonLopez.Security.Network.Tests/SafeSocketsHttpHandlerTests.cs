@@ -532,6 +532,8 @@ public sealed class SafeSocketsHttpHandlerTests
         req.Headers.Add("Cookie2", "$Version=1");
         req.Headers.Add("X-Api-Key", "api-key-99999");
         req.Headers.Add("X-Auth-Token", "auth-token-88888");
+        req.Headers.Add("Proxy-Authorization", "Basic secret-credentials");
+        req.Headers.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
         req.Headers.Add("Custom-Tracking-Header", "allowed-value");
 
         var response = await invoker.SendAsync(req, CancellationToken.None);
@@ -546,6 +548,8 @@ public sealed class SafeSocketsHttpHandlerTests
         redirectRequest.Headers.Contains("Cookie2").Should().BeFalse("Cookie2 must be stripped on cross-origin redirect.");
         redirectRequest.Headers.Contains("X-Api-Key").Should().BeFalse("X-Api-Key must be stripped on cross-origin redirect.");
         redirectRequest.Headers.Contains("X-Auth-Token").Should().BeFalse("X-Auth-Token must be stripped on cross-origin redirect.");
+        redirectRequest.Headers.Contains("Proxy-Authorization").Should().BeFalse("Proxy-Authorization must be stripped on cross-origin redirect.");
+        redirectRequest.Headers.Contains("Sec-WebSocket-Key").Should().BeFalse("Sec-WebSocket-Key must be stripped on cross-origin redirect.");
 
         // Non-sensitive headers must be preserved
         redirectRequest.Headers.Contains("Custom-Tracking-Header").Should().BeTrue("Non-sensitive header should be preserved.");
@@ -628,6 +632,126 @@ public sealed class SafeSocketsHttpHandlerTests
         var act = async () => await invoker.SendAsync(req, CancellationToken.None);
         await act.Should().ThrowAsync<HttpRequestException>()
             .WithMessage("*prohibited*to prevent credential and body exfiltration*");
+    }
+
+    [Fact]
+    public void Constructor_DefaultInnerHandler_EnforcesUseProxyFalse()
+    {
+        using var handler = new SafeSocketsHttpHandler();
+        var inner = (SocketsHttpHandler)handler.InnerHandler;
+        inner.UseProxy.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SendAsync_DifferentSchemeRedirect_StripsSensitiveCredentialHeaders()
+    {
+        HttpRequestMessage? redirectRequest = null;
+        var step = 0;
+        var mockInner = new TestHttpMessageHandler((req, ct) =>
+        {
+            step++;
+            if (step == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Redirect);
+                resp.Headers.Location = new Uri("http://secure-origin.com/resource");
+                return Task.FromResult(resp);
+            }
+
+            redirectRequest = req;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        var options = new SsrfProtectionOptions { RequireHttps = false };
+        using var handler = new SafeSocketsHttpHandler(resolver: null, options: options, innerHandler: mockInner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "https://secure-origin.com/resource");
+        req.Headers.Add("Authorization", "Bearer sensitive-secret-token");
+
+        var response = await invoker.SendAsync(req, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        redirectRequest.Should().NotBeNull();
+        redirectRequest!.Headers.Contains("Authorization").Should().BeFalse("Scheme change is cross-origin under RFC 6454.");
+    }
+
+    [Fact]
+    public async Task SendAsync_302RedirectOfPost_ConvertsToGet()
+    {
+        HttpRequestMessage? redirectRequest = null;
+        var step = 0;
+        var mockInner = new TestHttpMessageHandler((req, ct) =>
+        {
+            step++;
+            if (step == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Found);
+                resp.Headers.Location = new Uri("https://secure-origin.com/new-path");
+                return Task.FromResult(resp);
+            }
+
+            redirectRequest = req;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        using var handler = new SafeSocketsHttpHandler(resolver: null, options: new SsrfProtectionOptions(), innerHandler: mockInner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "https://secure-origin.com/initial");
+        req.Content = new StringContent("body");
+        var response = await invoker.SendAsync(req, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        redirectRequest.Should().NotBeNull();
+        redirectRequest!.Method.Should().Be(HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task SendAsync_302CrossOriginWithContent_ConvertsToGetWithoutThrowing()
+    {
+        HttpRequestMessage? redirectRequest = null;
+        var step = 0;
+        var mockInner = new TestHttpMessageHandler((req, ct) =>
+        {
+            step++;
+            if (step == 1)
+            {
+                var resp = new HttpResponseMessage(HttpStatusCode.Found);
+                resp.Headers.Location = new Uri("https://external-host.com/new-path");
+                return Task.FromResult(resp);
+            }
+
+            redirectRequest = req;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        using var handler = new SafeSocketsHttpHandler(resolver: null, options: new SsrfProtectionOptions(), innerHandler: mockInner);
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "https://secure-origin.com/initial");
+        req.Content = new StringContent("body");
+        var response = await invoker.SendAsync(req, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        redirectRequest.Should().NotBeNull();
+        redirectRequest!.Method.Should().Be(HttpMethod.Get);
+    }
+
+    [Fact]
+    public async Task ConnectCallbackAsync_CustomStreamConnector_IsInvoked()
+    {
+        var invoked = false;
+        using var handler = new SafeSocketsHttpHandler();
+        handler.StreamConnector = (ip, port, ct) =>
+        {
+            invoked = true;
+            return ValueTask.FromResult<Stream>(new MemoryStream());
+        };
+
+        handler.StreamConnector.Should().NotBeNull();
+        var stream = await handler.StreamConnector(IPAddress.Loopback, 80, CancellationToken.None);
+        invoked.Should().BeTrue();
+        stream.Should().NotBeNull();
     }
 }
 

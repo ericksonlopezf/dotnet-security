@@ -53,6 +53,14 @@ public sealed class WebAuthnRegistrationCeremonyTests
     }
 
     [Fact]
+    public void CreateRegistrationOptions_NullUser_ThrowsArgumentNullException()
+    {
+        var ex = Assert.Throws<ArgumentNullException>(() => _service.CreateRegistrationOptions(null!));
+        ex.ParamName.Should().Be("user");
+        ex.StackTrace.Should().NotContain("CredentialCreateOptions..ctor");
+    }
+
+    [Fact]
     public void CreateRegistrationOptions_GeneratesValidChallengeAndRp()
     {
         var user = new PublicKeyCredentialUserEntity(
@@ -80,12 +88,6 @@ public sealed class WebAuthnRegistrationCeremonyTests
         customResult.Challenge.Length.Should().Be(32);
     }
 
-    [Fact]
-    public void CreateRegistrationOptions_NullUser_ThrowsArgumentNullException()
-    {
-        var ex = Assert.Throws<ArgumentNullException>(() => _service.CreateRegistrationOptions(null!));
-        ex.ParamName.Should().Be("user");
-    }
 
     [Fact]
     public async Task VerifyRegistrationAsync_ValidNoneAttestation_ReturnsSuccess()

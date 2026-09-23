@@ -72,6 +72,25 @@ public sealed class AbacModelTests
     }
 
     [Fact]
+    public void AbacDecision_EnsurePermitted_BehavesAsExpected()
+    {
+        var permit = AbacDecision.Permit("P1", "R1", "Allowed");
+        permit.Invoking(p => p.EnsurePermitted()).Should().NotThrow();
+
+        var denyWithDetails = AbacDecision.Deny("P2", "R2", "Blocked reason");
+        var ex1 = Assert.Throws<UnauthorizedAccessException>(() => denyWithDetails.EnsurePermitted());
+        ex1.Message.Should().Be("Access denied by ABAC PDP. Decision status: Deny. Policy: 'P2', Rule: 'R2'. Reason: Blocked reason");
+
+        var denyEmpty = new AbacDecision(AbacDecisionStatus.Deny);
+        var ex2 = Assert.Throws<UnauthorizedAccessException>(() => denyEmpty.EnsurePermitted());
+        ex2.Message.Should().Be("Access denied by ABAC PDP. Decision status: Deny. Policy: 'none', Rule: 'none'. Reason: No reason provided.");
+
+        var notApp = new AbacDecision(AbacDecisionStatus.NotApplicable);
+        var ex3 = Assert.Throws<UnauthorizedAccessException>(() => notApp.EnsurePermitted());
+        ex3.Message.Should().Be("Access denied by ABAC PDP. Decision status: NotApplicable. Policy: 'none', Rule: 'none'. Reason: No reason provided.");
+    }
+
+    [Fact]
     public void AbacRule_Properties_And_NullValidation()
     {
         var rule1 = AbacRule.PermitIf("R-Permit", _ => true, "Permit rule");

@@ -131,4 +131,27 @@ public sealed class CryptographicRandomTests
         Assert.Equal("byteLength", exNegative.ParamName);
         Assert.Contains("Byte length must be greater than zero.", exNegative.Message);
     }
+
+    [Fact]
+    public void TryGetUrlSafeString_GeneratesRandomAndCovers256ByteBoundary()
+    {
+        // 1. Randomness check (RandomNumberGenerator.Fill mutation generates constant 'A's)
+        Span<char> dest1 = stackalloc char[32];
+        Span<char> dest2 = stackalloc char[32];
+        Assert.True(CryptographicRandom.Shared.TryGetUrlSafeString(dest1, 16, out int w1));
+        Assert.True(CryptographicRandom.Shared.TryGetUrlSafeString(dest2, 16, out int w2));
+        Assert.Equal(w1, w2);
+        Assert.False(dest1[..w1].SequenceEqual(dest2[..w2]));
+        Assert.False(dest1[..w1].SequenceEqual(new string('A', w1).AsSpan()));
+
+        // 2. Exact 256-byte stackalloc boundary
+        Span<char> dest256 = new char[512];
+        Assert.True(CryptographicRandom.Shared.TryGetUrlSafeString(dest256, 256, out int w256));
+        Assert.True(w256 > 0);
+
+        // 3. Exact 257-byte heap allocation boundary
+        Span<char> dest257 = new char[512];
+        Assert.True(CryptographicRandom.Shared.TryGetUrlSafeString(dest257, 257, out int w257));
+        Assert.True(w257 > 0);
+    }
 }

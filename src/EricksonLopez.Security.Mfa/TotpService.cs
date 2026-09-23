@@ -48,7 +48,10 @@ public sealed class TotpService : ITotpService
 
     internal ConcurrentDictionary<string, DateTimeOffset> ConsumedCodes => _consumedCodes;
     internal int ConsumedCodesCount => _consumedCodes.Count;
-    internal const int MaxCapacity = MaxConsumedCodesCapacity;
+    internal int MaxConsumedCodesCapacity { get; set; } = DefaultMaxConsumedCodesCapacity;
+    internal int RoutinePruneThreshold { get; set; } = 1000;
+    internal const int MaxCapacity = DefaultMaxConsumedCodesCapacity;
+    private const int DefaultMaxConsumedCodesCapacity = 50_000;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TotpService"/> class.
@@ -263,7 +266,7 @@ public sealed class TotpService : ITotpService
                         return false;
                     }
 
-                    if (_consumedCodes.Count > 1000)
+                    if (_consumedCodes.Count > RoutinePruneThreshold)
                     {
                         PruneExpiredCodes(checkTime);
                     }
@@ -371,7 +374,7 @@ public sealed class TotpService : ITotpService
                                 return false;
                             }
 
-                            if (_consumedCodes.Count > 1000)
+                            if (_consumedCodes.Count > RoutinePruneThreshold)
                             {
                                 PruneExpiredCodes(checkTime);
                             }
@@ -390,7 +393,6 @@ public sealed class TotpService : ITotpService
         }
     }
 
-    private const int MaxConsumedCodesCapacity = 50_000;
 
     private void PruneExpiredCodes(DateTimeOffset now)
     {

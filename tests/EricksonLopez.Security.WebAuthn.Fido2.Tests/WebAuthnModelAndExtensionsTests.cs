@@ -468,5 +468,6 @@ public sealed class WebAuthnModelAndExtensionsTests
         var ex = Assert.Throws<ArgumentNullException>(() => ((Microsoft.Extensions.DependencyInjection.IServiceCollection)null!).AddWebAuthnFido2());
         ex.ParamName.Should().Be("services");
         ex.StackTrace.Should().Contain(nameof(WebAuthnServiceCollectionExtensions));
+        ex.StackTrace.Should().NotContain("OptionsServiceCollectionExtensions");
     }
 }

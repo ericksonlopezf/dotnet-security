@@ -15,21 +15,45 @@ public sealed class InMemoryTotpReplayStore : ITotpReplayStore
     private long _lastPruneTicks;
 
     /// <summary>
-    /// Defines the maximum capacity of consumed codes retained in memory.
+    /// Defines the default maximum capacity of consumed codes retained in memory.
     /// </summary>
     public const int MaxCapacity = 50_000;
 
+    private readonly int _maxCapacity;
+    private readonly int _pruneThreshold;
+
     internal ConcurrentDictionary<string, DateTimeOffset> ConsumedCodes => _consumedCodes;
     internal int ConsumedCodesCount => _consumedCodes.Count;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InMemoryTotpReplayStore"/> class.
+    /// </summary>
+    /// <param name="maxCapacity">Maximum capacity of consumed codes retained in memory.</param>
+    /// <param name="pruneThreshold">Threshold count beyond which routine expiration pruning runs.</param>
+    public InMemoryTotpReplayStore(int maxCapacity = MaxCapacity, int pruneThreshold = 1000)
+    {
+        if (maxCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCapacity), "Maximum capacity must be greater than zero.");
+        }
+
+        if (pruneThreshold <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pruneThreshold), "Prune threshold must be greater than zero.");
+        }
+
+        _maxCapacity = maxCapacity;
+        _pruneThreshold = pruneThreshold;
+    }
 
     /// <inheritdoc />
     public bool TryAdd(string key, DateTimeOffset expiresAt)
     {
         var now = DateTimeOffset.UtcNow;
-        if (_consumedCodes.Count >= MaxCapacity)
+        if (_consumedCodes.Count >= _maxCapacity)
         {
             PruneExpiredCodes(now);
-            if (_consumedCodes.Count >= MaxCapacity)
+            if (_consumedCodes.Count >= _maxCapacity)
             {
                 // Saturated cache cannot safely track replay without evicting active tokens.
                 // Fail-closed to prevent replay attacks during DoS/memory flooding.
@@ -42,7 +66,7 @@ public sealed class InMemoryTotpReplayStore : ITotpReplayStore
             return false;
         }
 
-        if (_consumedCodes.Count > 1000)
+        if (_consumedCodes.Count > _pruneThreshold)
         {
             PruneExpiredCodes(now);
         }
@@ -66,7 +90,7 @@ public sealed class InMemoryTotpReplayStore : ITotpReplayStore
         long nowTicks = now.UtcTicks;
         long lastTicks = Volatile.Read(ref _lastPruneTicks);
 
-        if (nowTicks - lastTicks < TimeSpan.FromSeconds(1).Ticks && _consumedCodes.Count < MaxCapacity)
+        if (nowTicks - lastTicks < TimeSpan.FromSeconds(1).Ticks && _consumedCodes.Count < _maxCapacity)
         {
             return;
         }

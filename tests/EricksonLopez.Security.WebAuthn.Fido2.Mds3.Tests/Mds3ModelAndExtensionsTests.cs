@@ -120,5 +120,21 @@ public sealed class Mds3ModelAndExtensionsTests
     {
         var ex = Assert.Throws<ArgumentNullException>(() => Mds3ServiceCollectionExtensions.AddFidoMds3(null!));
         ex.ParamName.Should().Be("services");
+        ex.StackTrace.Should().NotContain("HttpClientFactoryServiceCollectionExtensions");
+    }
+
+    [Fact]
+    public async Task Service_Dispose_ThrowsObjectDisposedException_OnSubsequentCalls()
+    {
+        var httpClient = new HttpClient();
+        var options = Microsoft.Extensions.Options.Options.Create(new Mds3Options());
+        var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<HttpMds3MetadataService>.Instance;
+        var service = new HttpMds3MetadataService(httpClient, options, logger);
+
+        service.Dispose();
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => service.RefreshAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => service.GetMetadataAsync(Guid.NewGuid()));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => service.ValidateAuthenticatorStatusAsync(Guid.NewGuid()));
     }
 }

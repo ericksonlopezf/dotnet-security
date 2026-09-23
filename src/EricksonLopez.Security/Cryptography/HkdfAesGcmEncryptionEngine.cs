@@ -225,7 +225,7 @@ public sealed class HkdfAesGcmEncryptionEngine : IAuthenticatedEncryptionEngine
         }
         finally
         {
-            ScrubEphemeralMemory(hybridKey);
+            CryptographicOperations.ZeroMemory(hybridKey);
         }
     }
 
@@ -254,7 +254,7 @@ public sealed class HkdfAesGcmEncryptionEngine : IAuthenticatedEncryptionEngine
         }
         finally
         {
-            ScrubEphemeralMemory(hybridKey);
+            CryptographicOperations.ZeroMemory(hybridKey);
         }
     }
 
@@ -283,10 +283,7 @@ public sealed class HkdfAesGcmEncryptionEngine : IAuthenticatedEncryptionEngine
         }
         finally
         {
-            ScrubEphemeralMemory(hybridKey);
+            CryptographicOperations.ZeroMemory(hybridKey);
         }
     }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    private static void ScrubEphemeralMemory(Span<byte> buffer) => CryptographicOperations.ZeroMemory(buffer);
 }

@@ -191,4 +191,59 @@ public sealed class AesGcmAuthenticatedEncryptionEngineTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Security.AuthenticationTagMismatch");
     }
+
+    [Fact]
+    public void Encrypt_SpanWithNonceDestination_GeneratesRandomNonceAndDecodesSuccessfully()
+    {
+        var plaintext = "Span overload with nonceDestination"u8;
+        var key = new byte[32];
+        _random.Fill(key);
+
+        Span<byte> nonce1 = stackalloc byte[12];
+        Span<byte> cipher1 = stackalloc byte[plaintext.Length];
+        Span<byte> tag1 = stackalloc byte[16];
+
+        Span<byte> nonce2 = stackalloc byte[12];
+        Span<byte> cipher2 = stackalloc byte[plaintext.Length];
+        Span<byte> tag2 = stackalloc byte[16];
+
+        var res1 = _sut.Encrypt(plaintext, key, nonce1, cipher1, tag1);
+        var res2 = _sut.Encrypt(plaintext, key, nonce2, cipher2, tag2);
+
+        res1.IsSuccess.Should().BeTrue();
+        res2.IsSuccess.Should().BeTrue();
+
+        // Ensure nonces are not zeroed and are unique
+        nonce1.ToArray().Should().NotBeEquivalentTo(new byte[12]);
+        nonce1.ToArray().Should().NotBeEquivalentTo(nonce2.ToArray());
+
+        // Verify roundtrip decryption
+        var decrypted = new byte[plaintext.Length];
+        var decRes = _sut.Decrypt(cipher1, key, nonce1, tag1, default, decrypted, out var written);
+        decRes.IsSuccess.Should().BeTrue();
+        written.Should().Be(plaintext.Length);
+        decrypted.Should().BeEquivalentTo(plaintext.ToArray());
+
+        // Test invalid destination sizes for this overload
+        Span<byte> shortNonce = stackalloc byte[11];
+        var resShortNonce = _sut.Encrypt(plaintext, key, shortNonce, cipher1, tag1);
+        resShortNonce.IsFailure.Should().BeTrue();
+        resShortNonce.Error.Code.Should().Be("Security.EncryptionFailed");
+        resShortNonce.Error.Description.Should().Contain("12-byte nonce destination");
+
+        Span<byte> shortTag = stackalloc byte[15];
+        var resShortTag = _sut.Encrypt(plaintext, key, nonce1, cipher1, shortTag);
+        resShortTag.IsFailure.Should().BeTrue();
+        resShortTag.Error.Code.Should().Be("Security.EncryptionFailed");
+        resShortTag.Error.Description.Should().Contain("16-byte tag destination");
+
+        Span<byte> shortCipher = stackalloc byte[plaintext.Length - 1];
+        var resShortCipher = _sut.Encrypt(plaintext, key, nonce1, shortCipher, tag1);
+        resShortCipher.IsFailure.Should().BeTrue();
+        resShortCipher.Error.Code.Should().Be("Security.EncryptionFailed");
+
+        var resInvalidKey = _sut.Encrypt(plaintext, new byte[16], nonce1, cipher1, tag1);
+        resInvalidKey.IsFailure.Should().BeTrue();
+        resInvalidKey.Error.Code.Should().Be("Security.InvalidKey");
+    }
 }

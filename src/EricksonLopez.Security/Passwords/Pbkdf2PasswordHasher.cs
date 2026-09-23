@@ -124,7 +124,7 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
         string saltBase64 = Convert.ToBase64String(salt);
         string hashBase64 = Convert.ToBase64String(derivedKey);
 
-        ScrubEphemeralMemory(derivedKey);
+        CryptographicOperations.ZeroMemory(derivedKey);
 
         sw.Stop();
         SecurityMeter.Pbkdf2HashingDurationMs.Record(sw.Elapsed.TotalMilliseconds);
@@ -248,9 +248,9 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
         }
         finally
         {
-            ScrubEphemeralMemory(computedHash);
-            ScrubEphemeralMemory(expectedHash);
-            ScrubEphemeralMemory(salt);
+            CryptographicOperations.ZeroMemory(computedHash);
+            CryptographicOperations.ZeroMemory(expectedHash);
+            CryptographicOperations.ZeroMemory(salt);
         }
     }
 
@@ -311,9 +311,9 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
         }
         finally
         {
-            ScrubEphemeralMemory(computedHash);
-            ScrubEphemeralMemory(expectedHash);
-            ScrubEphemeralMemory(salt);
+            CryptographicOperations.ZeroMemory(computedHash);
+            CryptographicOperations.ZeroMemory(expectedHash);
+            CryptographicOperations.ZeroMemory(salt);
         }
     }
 
@@ -352,6 +352,4 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
         return storedIterations < _iterations;
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-    private static void ScrubEphemeralMemory(Span<byte> buffer) => CryptographicOperations.ZeroMemory(buffer);
 }

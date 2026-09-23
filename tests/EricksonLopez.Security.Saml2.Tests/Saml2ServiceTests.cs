@@ -1640,4 +1640,79 @@ public sealed class Saml2ServiceTests : IClassFixture<SamlTestCertificatesFixtur
         var res2 = await service.ProcessIdpInitiatedResponseAsync(xml);
         res2.IsSuccess.Should().BeTrue(res2.IsFailure ? res2.Error.Description : string.Empty);
     }
+
+    [Fact]
+    public void Saml2Options_DefaultValues_RequireAssertionExpirationIsTrue()
+    {
+        var options = new Saml2Options();
+        options.RequireAssertionExpiration.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ValidateAssertionTimestamps_MissingExpirationWhenRequired_ReturnsPolicyViolation()
+    {
+        var doc = new XmlDocument();
+        doc.LoadXml("<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\"><saml:Conditions /></saml:Assertion>");
+        var nsMgr = new XmlNamespaceManager(doc.NameTable);
+        nsMgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
+
+        var result = Saml2Service.ValidateAssertionTimestamps(
+            doc.DocumentElement!,
+            nsMgr,
+            DateTimeOffset.UtcNow,
+            TimeSpan.FromMinutes(5),
+            requireExpiration: true);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.PolicyViolation");
+        result.Error.Description.Should().Contain("Assertion missing required Conditions/@NotOnOrAfter expiration attribute.");
+    }
+
+    [Fact]
+    public async Task PruneExpiredAssertionIds_WhenCacheExceedsCapacity_RemovesExcessOldestEntries()
+    {
+        var fakeTime = new FakeTimeProvider(DateTimeOffset.Parse("2026-06-01T12:00:00Z"));
+        var service = new Saml2Service(
+            Options.Create(_options),
+            new Saml2XswValidator(),
+            _sigValidator,
+            _decryptor,
+            new Saml2ClaimsMapper(),
+            _logger,
+            fakeTime);
+        service.MaxReplayCacheCapacity = 2;
+
+        // Process 3 unexpired assertions (capacity is 2, so 1 excess)
+        for (int i = 1; i <= 3; i++)
+        {
+            fakeTime.Advance(TimeSpan.FromSeconds(1));
+            var xml = new SamlTestMessageBuilder().WithAssertionId($"_assert_cap_{i}").BuildXml();
+            var res = await service.ProcessIdpInitiatedResponseAsync(xml);
+            res.IsSuccess.Should().BeTrue();
+        }
+
+        // Before prune, count is 3
+        service.PruneExpiredAssertionIds();
+
+        // After prune, oldest was removed, exactly 2 remain
+        // Replaying _assert_cap_1 succeeds because it was pruned as the oldest excess!
+        var replayedOldest = await service.ProcessIdpInitiatedResponseAsync(new SamlTestMessageBuilder().WithAssertionId("_assert_cap_1").BuildXml());
+        replayedOldest.IsSuccess.Should().BeTrue();
+
+        // But _assert_cap_3 is still in cache and cannot be replayed
+        var replayedNewest = await service.ProcessIdpInitiatedResponseAsync(new SamlTestMessageBuilder().WithAssertionId("_assert_cap_3").BuildXml());
+        replayedNewest.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessIdpInitiatedResponseAsync_XmlExceedingMaxCharacters_ReturnsInvalidToken()
+    {
+        // Create a payload exceeding 2,000,000 characters
+        var bigComment = new string('A', 2_100_000);
+        var hugeXml = $"<!-- {bigComment} --><samlp:Response xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" />";
+
+        var result = await _service.ProcessIdpInitiatedResponseAsync(hugeXml);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.InvalidToken");
+    }
 }

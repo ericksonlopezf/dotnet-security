@@ -141,19 +141,13 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
         {
             foreach (var entry in _activeKeyCache.Values)
             {
-                if (entry.Bytes is not null)
-                {
-                    CryptographicOperations.ZeroMemory(entry.Bytes);
-                }
+                CryptographicOperations.ZeroMemory(entry.Bytes);
             }
             _activeKeyCache.Clear();
 
             foreach (var entry in _keyCache.Values)
             {
-                if (entry.Bytes is not null)
-                {
-                    CryptographicOperations.ZeroMemory(entry.Bytes);
-                }
+                CryptographicOperations.ZeroMemory(entry.Bytes);
             }
             _keyCache.Clear();
         }
@@ -165,7 +159,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
         var cacheKey = $"{keyId.Value}:{version.Value}";
         lock (_cacheLock)
         {
-            if (_keyCache.TryRemove(cacheKey, out var entry) && entry.Bytes is not null)
+            if (_keyCache.TryRemove(cacheKey, out var entry))
             {
                 CryptographicOperations.ZeroMemory(entry.Bytes);
             }
@@ -174,7 +168,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
             {
                 if (kvp.Value.Metadata.KeyId == keyId && kvp.Value.Metadata.Version == version)
                 {
-                    if (_activeKeyCache.TryRemove(kvp.Key, out var activeEntry) && activeEntry.Bytes is not null)
+                    if (_activeKeyCache.TryRemove(kvp.Key, out var activeEntry))
                     {
                         CryptographicOperations.ZeroMemory(activeEntry.Bytes);
                     }
@@ -188,7 +182,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
     {
         lock (_cacheLock)
         {
-            if (_activeKeyCache.TryRemove(purpose, out var entry) && entry.Bytes is not null)
+            if (_activeKeyCache.TryRemove(purpose, out var entry))
             {
                 CryptographicOperations.ZeroMemory(entry.Bytes);
             }
@@ -276,7 +270,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
             var keyBytes = keyResult.Value.GetKeyBytes().ToArray();
             lock (_cacheLock)
             {
-                if (_activeKeyCache.TryGetValue(purpose, out var oldEntry) && oldEntry.Bytes is not null)
+                if (_activeKeyCache.TryGetValue(purpose, out var oldEntry))
                 {
                     CryptographicOperations.ZeroMemory(oldEntry.Bytes);
                 }
@@ -294,7 +288,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
         {
             if (kvp.Value.Expires <= now)
             {
-                if (_keyCache.TryRemove(kvp.Key, out var removed) && removed.Bytes is not null)
+                if (_keyCache.TryRemove(kvp.Key, out var removed))
                 {
                     CryptographicOperations.ZeroMemory(removed.Bytes);
                 }
@@ -314,7 +308,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
 
                 foreach (var k in oldestKeys)
                 {
-                    if (_keyCache.TryRemove(k, out var removed) && removed.Bytes is not null)
+                    if (_keyCache.TryRemove(k, out var removed))
                     {
                         CryptographicOperations.ZeroMemory(removed.Bytes);
                     }
@@ -358,7 +352,7 @@ public sealed class KeyRing : IKeyRing, IEncryptionKeyProvider, IDisposable
             var keyBytes = key.GetKeyBytes().ToArray();
             lock (_cacheLock)
             {
-                if (_keyCache.TryGetValue(cacheKey, out var oldEntry) && oldEntry.Bytes is not null)
+                if (_keyCache.TryGetValue(cacheKey, out var oldEntry))
                 {
                     CryptographicOperations.ZeroMemory(oldEntry.Bytes);
                 }

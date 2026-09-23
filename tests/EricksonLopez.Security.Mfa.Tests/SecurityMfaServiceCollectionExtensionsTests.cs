@@ -24,6 +24,9 @@ public sealed class SecurityMfaServiceCollectionExtensionsTests
 
         var recovery = provider.GetService<IRecoveryCodeGenerator>();
         recovery.Should().NotBeNull().And.BeOfType<RecoveryCodeGenerator>();
+
+        var replay = provider.GetService<ITotpReplayStore>();
+        replay.Should().NotBeNull().And.BeOfType<InMemoryTotpReplayStore>();
     }
 
     [Fact]
@@ -32,5 +35,34 @@ public sealed class SecurityMfaServiceCollectionExtensionsTests
         IServiceCollection services = null!;
         var ex = Assert.Throws<ArgumentNullException>(() => services.AddSecurityMfa());
         ex.StackTrace.Should().NotContain("ServiceCollectionServiceExtensions");
+    }
+
+    [Fact]
+    public void AddDistributedTotpReplayStore_Generic_RegistersCustomStore()
+    {
+        var services = new ServiceCollection();
+        var returned = services.AddDistributedTotpReplayStore<InMemoryTotpReplayStore>();
+        returned.Should().BeSameAs(services);
+
+        using var provider = services.BuildServiceProvider();
+        var replay = provider.GetService<ITotpReplayStore>();
+        replay.Should().NotBeNull().And.BeOfType<InMemoryTotpReplayStore>();
+    }
+
+    [Fact]
+    public void AddDistributedTotpReplayStore_Generic_NullServices_ThrowsArgumentNullException()
+    {
+        IServiceCollection services = null!;
+        Assert.Throws<ArgumentNullException>(() => services.AddDistributedTotpReplayStore<InMemoryTotpReplayStore>());
+    }
+
+    [Fact]
+    public void AddDistributedTotpReplayStore_Delegate_NullArguments_ThrowsArgumentNullException()
+    {
+        IServiceCollection nullServices = null!;
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddDistributedTotpReplayStore((k, e, ct) => System.Threading.Tasks.ValueTask.FromResult(true)));
+
+        var services = new ServiceCollection();
+        Assert.Throws<ArgumentNullException>(() => services.AddDistributedTotpReplayStore(null!));
     }
 }

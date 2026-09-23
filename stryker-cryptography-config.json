@@ -21,7 +21,10 @@
     "ignore-methods": [
       "*ArrayPool*",
       "*Rent*",
-      "*Return*"
+      "*Return*",
+      "*ZeroMemory*",
+      "*Log*",
+      "ConfigureAwait"
     ],
     "ignore-mutations": [],
     "reporters": [

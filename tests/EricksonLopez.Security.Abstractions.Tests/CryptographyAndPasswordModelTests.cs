@@ -92,7 +92,83 @@ public sealed class CryptographyAndPasswordModelTests
         Assert.NotEqual(envelopeWithAad, cloned);
         Assert.True(envelopeWithAad != cloned);
         Assert.False(envelopeWithAad == cloned);
-        Assert.NotNull(envelopeWithAad.ToString());
+        Assert.Equal($"SecurityEnvelope {{ KeyId = {keyId}, KeyVersion = {keyVersion}, Algorithm = Aes256Gcm, PayloadLength = 5 bytes, HasAad = True }}", envelopeWithAad.ToString());
+    }
+
+    // ==========================================
+    // AuthenticatedContext Struct Tests
+    // ==========================================
+
+    [Fact]
+    public void AuthenticatedContext_Empty_PropertiesAndDefaults()
+    {
+        var empty = AuthenticatedContext.Empty;
+        Assert.True(empty.IsEmpty);
+        Assert.True(empty.Span.IsEmpty);
+        Assert.Equal(0, empty.GetHashCode());
+        Assert.True(empty.Equals(AuthenticatedContext.Empty));
+        Assert.True(empty.Equals((object)AuthenticatedContext.Empty));
+        Assert.True(empty == AuthenticatedContext.Empty);
+        Assert.False(empty != AuthenticatedContext.Empty);
+    }
+
+    [Fact]
+    public void AuthenticatedContext_ForTenant_ValidTenant_ReturnsPrefixedBytes()
+    {
+        var ctx = AuthenticatedContext.ForTenant("acme-corp");
+        Assert.False(ctx.IsEmpty);
+        Assert.Equal("tenant:acme-corp", System.Text.Encoding.UTF8.GetString(ctx.Span));
+        Assert.NotEqual(0, ctx.GetHashCode());
+
+        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(null!));
+        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant(""));
+        Assert.Throws<ArgumentException>("tenantId", () => AuthenticatedContext.ForTenant("   "));
+    }
+
+    [Fact]
+    public void AuthenticatedContext_FromBytes_SpanVariants()
+    {
+        var empty = AuthenticatedContext.FromBytes(ReadOnlySpan<byte>.Empty);
+        Assert.True(empty.IsEmpty);
+
+        byte[] raw = [10, 20, 30, 40];
+        var ctx = AuthenticatedContext.FromBytes(raw);
+        Assert.False(ctx.IsEmpty);
+        Assert.True(ctx.Span.SequenceEqual(raw));
+    }
+
+    [Fact]
+    public void AuthenticatedContext_Equality_AllBranchesCovered()
+    {
+        var empty1 = AuthenticatedContext.Empty;
+        var empty2 = default(AuthenticatedContext);
+        var ctx1 = AuthenticatedContext.FromBytes(new byte[] { 1, 2, 3 });
+        var ctx2 = AuthenticatedContext.FromBytes(new byte[] { 1, 2, 3 });
+        var ctxDiff = AuthenticatedContext.FromBytes(new byte[] { 1, 2, 4 });
+
+        // Both empty
+        Assert.True(empty1.Equals(empty2));
+        Assert.True(empty1 == empty2);
+
+        // One empty, other not
+        Assert.False(empty1.Equals(ctx1));
+        Assert.False(ctx1.Equals(empty1));
+        Assert.False(empty1 == ctx1);
+        Assert.True(empty1 != ctx1);
+        Assert.False(empty1.Equals((object)ctx1));
+        Assert.False(empty1.Equals("not-a-context"));
+        Assert.False(empty1.Equals(null));
+
+        // Both non-empty equal
+        Assert.True(ctx1.Equals(ctx2));
+        Assert.True(ctx1 == ctx2);
+        Assert.False(ctx1 != ctx2);
+        Assert.Equal(ctx1.GetHashCode(), ctx2.GetHashCode());
+
+        // Both non-empty different
+        Assert.False(ctx1.Equals(ctxDiff));
+        Assert.False(ctx1 == ctxDiff);
+        Assert.True(ctx1 != ctxDiff);
     }
 
     // ==========================================

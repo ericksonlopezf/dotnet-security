@@ -48,7 +48,8 @@ public sealed class XmlSigningOptionsAlgorithmAllowlistTests
         var options = new XmlSigningOptions();
         var act = () => options.CanonicalizationMethod = uri;
         act.Should().ThrowExactly<ArgumentException>(
-            because: $"'{uri}' is not an approved canonicalization method and must be rejected");
+            because: $"'{uri}' is not an approved canonicalization method and must be rejected")
+            .WithMessage($"Canonicalization method '{uri}' is not in the list of approved algorithms. Use one of: {string.Join(", ", XmlSigningOptions.AllowedCanonicalizationMethods)}*");
     }
 
     // ── XML-004: SignatureMethod Allowlist ─────────────────────────────────────
@@ -84,7 +85,8 @@ public sealed class XmlSigningOptionsAlgorithmAllowlistTests
         var options = new XmlSigningOptions();
         var act = () => options.SignatureMethod = uri;
         act.Should().ThrowExactly<ArgumentException>(
-            because: $"'{uri}' is either weak or unknown and must be rejected to prevent weak signature attacks");
+            because: $"'{uri}' is either weak or unknown and must be rejected to prevent weak signature attacks")
+            .WithMessage($"Signature method '{uri}' is not in the list of approved algorithms. Weak methods (e.g., RSA-SHA1) are not permitted. Use one of: {string.Join(", ", XmlSigningOptions.AllowedSignatureMethods)}*");
     }
 
     [Fact]
@@ -127,7 +129,8 @@ public sealed class XmlSigningOptionsAlgorithmAllowlistTests
         var options = new XmlSigningOptions();
         var act = () => options.DigestMethod = uri;
         act.Should().ThrowExactly<ArgumentException>(
-            because: $"'{uri}' is a weak or unknown digest and must be rejected");
+            because: $"'{uri}' is a weak or unknown digest and must be rejected")
+            .WithMessage($"Digest method '{uri}' is not in the list of approved algorithms. Use one of: {string.Join(", ", XmlSigningOptions.AllowedDigestMethods)}*");
     }
 
     // ── Immutable Defaults ─────────────────────────────────────────────────────
@@ -157,5 +160,20 @@ public sealed class XmlSigningOptionsAlgorithmAllowlistTests
         XmlSigningOptions.AllowedSignatureMethods.Should().NotContain(
             "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
             because: "RSA-SHA1 is weak and must never be in the approved list");
+    }
+
+    [Fact]
+    public void XmlVerificationOptions_AllowedTransformAlgorithms_ContainsExpectedStandardAlgorithms()
+    {
+        var options = new XmlVerificationOptions();
+        options.AllowedTransformAlgorithms.Should().Contain([
+            "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+            "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
+            "http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments",
+            "http://www.w3.org/2001/10/xml-exc-c14n#",
+            "http://www.w3.org/2001/10/xml-exc-c14n#WithComments",
+            "http://www.w3.org/2000/09/xmldsig#base64"
+        ]);
+        options.AllowedTransformAlgorithms.Should().NotContain("");
     }
 }

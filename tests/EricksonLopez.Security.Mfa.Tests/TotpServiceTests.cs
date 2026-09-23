@@ -737,5 +737,129 @@ public sealed class TotpServiceTests
         var replayedB = await serviceNodeB.VerifyCodeAsync(Secret, code, now, options);
         replayedB.Should().BeFalse();
     }
+
+    [Theory]
+    [InlineData(null, "123456")]
+    [InlineData("", "123456")]
+    [InlineData("   ", "123456")]
+    [InlineData(Secret, null)]
+    [InlineData(Secret, "")]
+    [InlineData(Secret, "   ")]
+    [InlineData("INVALID_BASE32!!!", "123456")]
+    [InlineData(Secret, "123")]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_InvalidInputs_ReturnsFalse(string? secretKey, string? code)
+    {
+        var service = new TotpService(_timeProvider);
+        var result = await service.VerifyCodeAsync(secretKey!, code!);
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_NullOptionsAndTimestamp_UsesDefaults()
+    {
+        var service = new TotpService(_timeProvider);
+        var code = service.ComputeCode(Secret, _timeProvider.GetUtcNow());
+        var result = await service.VerifyCodeAsync(Secret, code);
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_WithDrift_AllowsWithinWindowAndRejectsOutside()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { AllowedDriftSteps = 1, PeriodSeconds = 30, PreventReplay = false };
+
+        var pastCode = service.ComputeCode(Secret, now.AddSeconds(-30), options);
+        var futureCode = service.ComputeCode(Secret, now.AddSeconds(30), options);
+        var farCode = service.ComputeCode(Secret, now.AddSeconds(60), options);
+
+        (await service.VerifyCodeAsync(Secret, pastCode, now, options)).Should().BeTrue("past 1 step drift should be allowed");
+        (await service.VerifyCodeAsync(Secret, futureCode, now, options)).Should().BeTrue("future 1 step drift should be allowed");
+        (await service.VerifyCodeAsync(Secret, farCode, now, options)).Should().BeFalse("2 steps drift exceeds AllowedDriftSteps=1");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_InProcessReplay_BlocksSecondVerification()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+        var code = service.ComputeCode(Secret, now, options);
+
+        var first = await service.VerifyCodeAsync(Secret, code, now, options);
+        first.Should().BeTrue();
+
+        var second = await service.VerifyCodeAsync(Secret, code, now, options);
+        second.Should().BeFalse("second presentation of the same TOTP code must be blocked as replay");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_SaturatedCache_ReturnsFalse()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 1, RoutinePruneThreshold = 1 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        (await service.VerifyCodeAsync(Secret, code1, now, options)).Should().BeTrue();
+
+        // Second token at next period (cache saturated at 1, unexpired)
+        var nextTime = now.AddSeconds(30);
+        var code2 = service.ComputeCode(Secret, nextTime, options);
+        var result = await service.VerifyCodeAsync(Secret, code2, nextTime, options);
+        result.Should().BeFalse("cache saturated and unable to safely track replay must fail closed");
+    }
+
+    [Fact]
+    public void VerifyCode_SaturatedCache_ReturnsFalse()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 1, RoutinePruneThreshold = 1 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        service.VerifyCode(Secret, code1, now, options).Should().BeTrue();
+
+        var nextTime = now.AddSeconds(30);
+        var code2 = service.ComputeCode(Secret, nextTime, options);
+        service.VerifyCode(Secret, code2, nextTime, options).Should().BeFalse("cache saturated must fail closed");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_WhenReplayStoreFails_ReturnsFalse()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var rejectingStore = new DelegateTotpReplayStore((k, e, ct) => ValueTask.FromResult(false), null);
+        var service = new TotpService(fakeTime, rejectingStore);
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+        var code = service.ComputeCode(Secret, now, options);
+
+        var result = await service.VerifyCodeAsync(Secret, code, now, options);
+        result.Should().BeFalse("rejection by replay store must cause verification to return false");
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task VerifyCodeAsync_ExceedsPruneThreshold_PrunesExpired()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime) { MaxConsumedCodesCapacity = 10, RoutinePruneThreshold = 1 };
+        var now = fakeTime.GetUtcNow();
+        var options = new TotpOptions { PreventReplay = true };
+
+        var code1 = service.ComputeCode(Secret, now, options);
+        (await service.VerifyCodeAsync(Secret, code1, now, options)).Should().BeTrue();
+
+        // Advance time by 1 hour (so code1 entry is expired)
+        var future = now.AddHours(1);
+        fakeTime.SetUtcNow(future);
+        var code2 = service.ComputeCode(Secret, future, options);
+        (await service.VerifyCodeAsync(Secret, code2, future, options)).Should().BeTrue();
+    }
 }
 

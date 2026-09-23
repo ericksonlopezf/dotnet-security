@@ -110,11 +110,17 @@ public sealed class Fido2AttestationTestBuilder
         CosePublicKey coseKey;
         byte[] signature;
         var authDataBytes = new byte[37];
+        authDataBytes[32] = (byte)_flags;
+        BinaryPrimitives.WriteUInt32BigEndian(authDataBytes.AsSpan(33, 4), _signCount);
 
         if (_isRsa)
         {
             using var rsa = RSA.Create(2048);
             var rsaParams = rsa.ExportParameters(false);
+            if (rsaParams.D is not null)
+            {
+                throw new InvalidOperationException("RSA private exponent must not be exported.");
+            }
             coseKey = new CosePublicKey(
                 CoseKeyType.Rsa,
                 _algorithm,
@@ -149,6 +155,10 @@ public sealed class Fido2AttestationTestBuilder
 
             using var ecdsa = ECDsa.Create(namedCurve);
             var ecParams = ecdsa.ExportParameters(false);
+            if (ecParams.D is not null)
+            {
+                throw new InvalidOperationException("EC private key must not be exported.");
+            }
             coseKey = new CosePublicKey(
                 CoseKeyType.Ec2,
                 _algorithm,
@@ -193,6 +203,10 @@ public sealed class Fido2AttestationTestBuilder
 
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ecdsa.ExportParameters(false);
+        if (ecParams.D is not null)
+        {
+            throw new InvalidOperationException("EC private key must not be exported.");
+        }
 
         var coseWriter = new CborWriter(CborConformanceMode.Lax);
         coseWriter.WriteStartMap(5);
@@ -265,6 +279,10 @@ public sealed class Fido2AttestationTestBuilder
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ecdsa.ExportParameters(false);
+        if (ecParams.D is not null)
+        {
+            throw new InvalidOperationException("EC private key must not be exported.");
+        }
 
         var coseKey = new CosePublicKey(
             CoseKeyType.Ec2,

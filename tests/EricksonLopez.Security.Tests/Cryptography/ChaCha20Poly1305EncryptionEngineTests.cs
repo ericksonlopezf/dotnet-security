@@ -289,6 +289,19 @@ public sealed class ChaCha20Poly1305EncryptionEngineTests
             var decResult = engine.Decrypt(oversized, key, stackalloc byte[12], stackalloc byte[16], ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
             Assert.True(decResult.IsFailure);
             Assert.Equal("Security.PayloadTooLarge", decResult.Error.Code);
+
+            // Exact boundary tests (MaxRecommendedPayloadBytes must NOT return PayloadTooLarge)
+            var exactSlice = oversized.AsSpan(0, ChaCha20Poly1305EncryptionEngine.MaxRecommendedPayloadBytes);
+            var encSpanExact = engine.Encrypt(exactSlice, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
+            Assert.True(encSpanExact.IsFailure);
+            Assert.Equal("Security.InvalidNonce", encSpanExact.Error.Code);
+
+            var decExact = engine.Decrypt(exactSlice, key, nonce: default, tag: default, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
+            Assert.True(decExact.IsFailure);
+            Assert.Equal("Security.InvalidNonce", decExact.Error.Code);
+
+            var encExact = engine.Encrypt(exactSlice, key);
+            Assert.True(encExact.IsSuccess);
         }
         catch (OutOfMemoryException)
         {

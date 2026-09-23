@@ -70,8 +70,90 @@ public sealed class HashiCorpVaultAdaptersTests
     public void HashiCorpVault_DefaultOptions_ThrowsInvalidOperationException_WhenStubNotEnabled()
     {
         var defaultOptions = Options.Create(new HashiCorpVaultOptions());
-        Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultSecretStore(defaultOptions));
-        Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultKeyStore(defaultOptions));
+        var exSecret = Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultSecretStore(defaultOptions));
+        exSecret.Message.Should().Contain("HashiCorpVaultOptions.VaultUrl must be configured");
+
+        var exKey = Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultKeyStore(defaultOptions));
+        exKey.Message.Should().Contain("HashiCorpVaultOptions.VaultUrl must be configured");
+    }
+
+    [Fact]
+    public void HashiCorpVaultClient_ConstructorValidation()
+    {
+        Assert.Throws<ArgumentNullException>(() => new HashiCorpVaultClient(null!));
+
+        var noUrl = new HashiCorpVaultOptions { VaultUrl = null };
+        var exNoUrl = Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultClient(noUrl));
+        exNoUrl.Message.Should().Contain("HashiCorpVaultOptions.VaultUrl must be configured");
+
+        var noAuth = new HashiCorpVaultOptions { VaultUrl = new Uri("http://127.0.0.1:8200"), Token = null, RoleId = null, SecretId = null };
+        var exNoAuth = Assert.Throws<InvalidOperationException>(() => new HashiCorpVaultClient(noAuth));
+        exNoAuth.Message.Should().Contain("HashiCorpVault authentication requires either a static Token or both RoleId and SecretId");
+    }
+
+    [Fact]
+    public void HashiCorpVault_Constructors_NullArgumentChecks()
+    {
+        var options = CreateOptions();
+        Assert.Throws<ArgumentNullException>(() => new HashiCorpVaultKeyStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<HashiCorpVaultKeyStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new HashiCorpVaultKeyStore(options, null!));
+
+        Assert.Throws<ArgumentNullException>(() => new HashiCorpVaultSecretStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<HashiCorpVaultSecretStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new HashiCorpVaultSecretStore(options, null!));
+    }
+
+    [Fact]
+    public void AddHashiCorpVaultSecurity_RegistersServicesAndValidatesNullArguments()
+    {
+        IServiceCollection nullServices = null!;
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddHashiCorpVaultSecurity());
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddHashiCorpVaultSecurity(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddHashiCorpVaultSecurity(null!));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        services.AddHashiCorpVaultSecurity(o => o.EnableDevelopmentInMemoryStub = true);
+
+        using var provider = services.BuildServiceProvider();
+        var keyStore = provider.GetRequiredService<IKeyStore>();
+        var secretStore = provider.GetRequiredService<ISecretStore>();
+
+        keyStore.Should().NotBeNull().And.BeOfType<HashiCorpVaultKeyStore>();
+        secretStore.Should().NotBeNull().And.BeOfType<HashiCorpVaultSecretStore>();
+
+        var defaultServices = new ServiceCollection();
+        defaultServices.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        defaultServices.AddHashiCorpVaultSecurity();
+        using var defaultProvider = defaultServices.BuildServiceProvider();
+        defaultProvider.GetRequiredService<IOptions<HashiCorpVaultOptions>>().Value.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task HashiCorpVault_Stores_Dispose_ClearsResources()
+    {
+        var options = CreateOptions();
+        var keyStore = new HashiCorpVaultKeyStore(options);
+        var secretStore = new HashiCorpVaultSecretStore(options);
+
+        var keyId = KeyIdentifier.Prefixed("vault-disp");
+        var version = KeyVersion.Initial;
+        var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256", DateTimeOffset.UtcNow);
+        var key = new CryptographicKey(metadata, SecretBuffer.CreateRandom(32));
+
+        var saveResult = await keyStore.SaveKeyAsync(key);
+        saveResult.IsSuccess.Should().BeTrue();
+
+        keyStore.Dispose();
+        secretStore.Dispose();
+
+        // Calling Dispose multiple times should be safe
+        keyStore.Dispose();
+        secretStore.Dispose();
+
+        // Stored in-memory keys are cleared upon disposal
+        var getAfterDispose = await keyStore.GetKeyAsync(keyId, version);
+        getAfterDispose.IsFailure.Should().BeTrue();
+        getAfterDispose.Error.Code.Should().Be("Security.KeyNotFound");
     }
 
     [Fact]

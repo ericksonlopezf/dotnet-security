@@ -173,23 +173,44 @@ public sealed class SecurityHeadersMiddlewareTests
     }
 
     [Fact]
-    public async Task SecurityHeadersMiddleware_DownstreamClearsHeaders_OnStartingRestoresHeaders()
+    public async Task SecurityHeadersMiddleware_AppliesHeadersBeforeDownstreamMiddlewareExecutes()
     {
         var options = Options.Create(new SecurityHeadersOptions());
         var context = new DefaultHttpContext();
-        context.Request.Scheme = "https";
+        bool headersPresentDownstream = false;
 
-        var middleware = new SecurityHeadersMiddleware(async ctx =>
+        var middleware = new SecurityHeadersMiddleware(ctx =>
         {
-            // Simulate downstream exception handler clearing all headers
-            ctx.Response.Headers.Clear();
-            // Trigger OnStarting via StartAsync
-            await ctx.Response.StartAsync();
+            headersPresentDownstream = ctx.Response.Headers.ContainsKey("X-Content-Type-Options");
+            return Task.CompletedTask;
         }, options);
 
         await middleware.InvokeAsync(context);
 
-        // Headers MUST be restored by OnStarting
+        headersPresentDownstream.Should().BeTrue("headers must be applied before downstream middleware executes");
+    }
+
+    [Fact]
+    public async Task SecurityHeadersMiddleware_DownstreamClearsHeaders_OnStartingRestoresHeaders()
+    {
+        var options = Options.Create(new SecurityHeadersOptions());
+        var context = new DefaultHttpContext();
+        var feature = new CustomResponseFeature();
+        context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseFeature>(feature);
+        context.Request.Scheme = "https";
+
+        var middleware = new SecurityHeadersMiddleware(async ctx =>
+        {
+            // Simulate downstream clearing headers
+            ctx.Response.Headers.Clear();
+            // Start response using the feature, triggering OnStarting and marking HasStarted = true
+            await feature.StartResponseAsync();
+        }, options);
+
+        await middleware.InvokeAsync(context);
+
+        // HasStarted is true, so finally block did not run; headers were restored solely by OnStarting callback!
+        feature.HasStarted.Should().BeTrue();
         context.Response.Headers.ContainsKey("Content-Security-Policy").Should().BeTrue();
         context.Response.Headers.ContainsKey("Strict-Transport-Security").Should().BeTrue();
         context.Response.Headers.ContainsKey("X-Content-Type-Options").Should().BeTrue();
@@ -197,5 +218,28 @@ public sealed class SecurityHeadersMiddlewareTests
         context.Response.Headers.ContainsKey("Referrer-Policy").Should().BeTrue();
         context.Response.Headers.ContainsKey("Permissions-Policy").Should().BeTrue();
         context.Response.Headers.ContainsKey("X-Permitted-Cross-Domain-Policies").Should().BeTrue();
+    }
+
+    private sealed class CustomResponseFeature : Microsoft.AspNetCore.Http.Features.IHttpResponseFeature
+    {
+        public int StatusCode { get; set; } = 200;
+        public string? ReasonPhrase { get; set; }
+        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+        public System.IO.Stream Body { get; set; } = new System.IO.MemoryStream();
+        public bool HasStarted { get; set; }
+
+        private readonly System.Collections.Generic.List<(Func<object, Task> Callback, object State)> _callbacks = new();
+
+        public void OnStarting(Func<object, Task> callback, object state) => _callbacks.Add((callback, state));
+        public void OnCompleted(Func<object, Task> callback, object state) { }
+
+        public async Task StartResponseAsync()
+        {
+            HasStarted = true;
+            foreach (var (callback, state) in _callbacks)
+            {
+                await callback(state);
+            }
+        }
     }
 }

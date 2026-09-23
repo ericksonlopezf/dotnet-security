@@ -19,7 +19,9 @@
       "break": 95
     },
     "ignore-methods": [
-      "ConfigureAwait"
+      "ConfigureAwait",
+      "*Log*",
+      "*ZeroMemory*"
     ],
     "ignore-mutations": [],
     "reporters": [

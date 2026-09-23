@@ -81,4 +81,51 @@ public sealed class DistributedTotpReplayStoreTests
         store.Should().NotBeNull();
         store.Should().BeOfType<DelegateTotpReplayStore>();
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryAdd_InvalidKey_ThrowsArgumentException(string? invalidKey)
+    {
+        var store = new DelegateTotpReplayStore((k, e, ct) => ValueTask.FromResult(true), (k, e) => true);
+        Assert.ThrowsAny<ArgumentException>(() => store.TryAdd(invalidKey!, DateTimeOffset.UtcNow));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task TryAddAsync_InvalidKey_ThrowsArgumentException(string? invalidKey)
+    {
+        var store = new DelegateTotpReplayStore((k, e, ct) => ValueTask.FromResult(true), null);
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await store.TryAddAsync(invalidKey!, DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void TryAdd_WithoutSyncHandler_InvokesAsyncHandlerSynchronously()
+    {
+        bool called = false;
+        var store = new DelegateTotpReplayStore((k, e, ct) => { called = true; return ValueTask.FromResult(true); }, syncHandler: null);
+        var result = store.TryAdd("test-key", DateTimeOffset.UtcNow);
+        result.Should().BeTrue();
+        called.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Constructor_NullAsyncHandler_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => new DelegateTotpReplayStore(null!, null));
+    }
+
+    [Fact]
+    public void TryAddAsync_CancelledToken_ReturnsCanceledTask()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var store = new DelegateTotpReplayStore((k, e, ct) => ValueTask.FromResult(true), null);
+        var task = store.TryAddAsync("test-key", DateTimeOffset.UtcNow, cts.Token);
+        task.IsCanceled.Should().BeTrue();
+    }
 }
+

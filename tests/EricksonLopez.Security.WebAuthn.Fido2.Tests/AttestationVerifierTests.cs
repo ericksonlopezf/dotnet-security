@@ -398,6 +398,19 @@ public sealed class AttestationVerifierTests
     }
 
     [Fact]
+    public void SafetyNetVerifier_InvalidUtf8Bytes_ReturnsInvalidTokenFailure()
+    {
+        var verifier = new AndroidSafetyNetAttestationVerifier();
+        var statement = new AttestationStatement("android-safetynet", new byte[] { 0xFF, 0xFE, 0xFD });
+        var authData = new AuthenticatorData(new byte[32], AuthenticatorDataFlags.UserPresent, 0, new byte[37]);
+
+        var result = verifier.Verify(statement, authData, new byte[32]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Description.Should().Contain("failed to decode JWS response bytes");
+    }
+
+    [Fact]
     public void SafetyNetVerifier_EcdsaCert_ReturnsSuccess()
     {
         var verifier = new AndroidSafetyNetAttestationVerifier();

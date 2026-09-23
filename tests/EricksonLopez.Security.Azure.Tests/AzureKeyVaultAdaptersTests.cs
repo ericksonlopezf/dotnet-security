@@ -54,8 +54,73 @@ public sealed class AzureKeyVaultAdaptersTests
     public void AzureKeyVault_DefaultOptions_ThrowsInvalidOperationException_WhenStubNotEnabled()
     {
         var defaultOptions = Options.Create(new AzureKeyVaultOptions());
-        Assert.Throws<InvalidOperationException>(() => new AzureKeyVaultSecretStore(defaultOptions));
-        Assert.Throws<InvalidOperationException>(() => new AzureKeyVaultKeyStore(defaultOptions));
+        var exSecret = Assert.Throws<InvalidOperationException>(() => new AzureKeyVaultSecretStore(defaultOptions));
+        exSecret.Message.Should().Contain("AzureKeyVaultSecretStore requires either a configured VaultUri");
+
+        var exKey = Assert.Throws<InvalidOperationException>(() => new AzureKeyVaultKeyStore(defaultOptions));
+        exKey.Message.Should().Contain("AzureKeyVaultKeyStore requires either a configured VaultUri");
+    }
+
+    [Fact]
+    public void AzureKeyVault_Constructors_NullArgumentChecks()
+    {
+        var options = CreateOptions();
+        Assert.Throws<ArgumentNullException>(() => new AzureKeyVaultKeyStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureKeyVaultKeyStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new AzureKeyVaultKeyStore(options, null!));
+
+        Assert.Throws<ArgumentNullException>(() => new AzureKeyVaultSecretStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<AzureKeyVaultSecretStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new AzureKeyVaultSecretStore(options, null!));
+    }
+
+    [Fact]
+    public void AddAzureKeyVaultSecurity_RegistersServicesAndValidatesNullArguments()
+    {
+        IServiceCollection nullServices = null!;
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddAzureKeyVaultSecurity());
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddAzureKeyVaultSecurity(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAzureKeyVaultSecurity(null!));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        services.AddAzureKeyVaultSecurity(o => o.EnableDevelopmentInMemoryStub = true);
+
+        using var provider = services.BuildServiceProvider();
+        var keyStore = provider.GetRequiredService<IKeyStore>();
+        var secretStore = provider.GetRequiredService<ISecretStore>();
+
+        keyStore.Should().NotBeNull().And.BeOfType<AzureKeyVaultKeyStore>();
+        secretStore.Should().NotBeNull().And.BeOfType<AzureKeyVaultSecretStore>();
+
+        var defaultServices = new ServiceCollection();
+        defaultServices.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        defaultServices.AddAzureKeyVaultSecurity();
+        using var defaultProvider = defaultServices.BuildServiceProvider();
+        defaultProvider.GetRequiredService<IOptions<AzureKeyVaultOptions>>().Value.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task AzureKeyVault_Stores_Dispose_ClearsResources()
+    {
+        var options = CreateOptions();
+        var keyStore = new AzureKeyVaultKeyStore(options);
+
+        var keyId = KeyIdentifier.Prefixed("az-disp");
+        var version = KeyVersion.Initial;
+        var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256", DateTimeOffset.UtcNow);
+        var key = new CryptographicKey(metadata, SecretBuffer.CreateRandom(32));
+
+        var saveResult = await keyStore.SaveKeyAsync(key);
+        saveResult.IsSuccess.Should().BeTrue();
+
+        keyStore.Dispose();
+
+        // Calling Dispose multiple times should be safe
+        keyStore.Dispose();
+
+        // Stored in-memory keys are cleared upon disposal
+        var getAfterDispose = await keyStore.GetKeyAsync(keyId, version);
+        getAfterDispose.IsFailure.Should().BeTrue();
+        getAfterDispose.Error.Code.Should().Be("Security.KeyNotFound");
     }
 
     [Fact]

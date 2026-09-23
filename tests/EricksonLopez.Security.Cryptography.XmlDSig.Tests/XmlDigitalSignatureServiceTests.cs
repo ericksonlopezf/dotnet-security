@@ -561,6 +561,120 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
 
         verifyResult.IsFailure.Should().BeTrue();
         verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.DisallowedTransform");
+        verifyResult.Error.Description.Should().Be("XML transform algorithm 'http://www.w3.org/TR/1999/REC-xslt-19991116' is not permitted by verification policy.");
+    }
+
+    [Fact]
+    public void SignXml_NullCertificate_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => XmlDigitalSignatureService.Instance.SignXml("<Doc/>", null!));
+        var doc = new XmlDocument();
+        doc.LoadXml("<Doc/>");
+        Assert.Throws<ArgumentNullException>(() => XmlDigitalSignatureService.Instance.SignXml(doc, null!));
+    }
+
+    [Fact]
+    public void SignXml_WithCustomSignatureMethod_AppliesSignatureMethodAlgorithm()
+    {
+        var sampleXml = "<Doc><Item>512</Item></Doc>";
+        var options = new XmlSigningOptions
+        {
+            SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+            CanonicalizationMethod = SignedXml.XmlDsigExcC14NTransformUrl
+        };
+
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert, options);
+        signResult.IsSuccess.Should().BeTrue();
+        signResult.Value.Should().Contain("Algorithm=\"http://www.w3.org/2001/04/xmldsig-more#rsa-sha512\"");
+        signResult.Value.Should().Contain($"Algorithm=\"{SignedXml.XmlDsigExcC14NTransformUrl}\"");
+    }
+
+    [Fact]
+    public void VerifyXml_WithNullAllowedTransformAlgorithms_BypassesTransformCheck()
+    {
+        var sampleXml = "<Doc Id=\"d1\"><Data>Sensitive</Data></Doc>";
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert);
+        signResult.IsSuccess.Should().BeTrue();
+
+        var options = new XmlVerificationOptions { AllowedTransformAlgorithms = null! };
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(signResult.Value, _cert, options);
+        verifyResult.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public void VerifyXml_WithCustomTrustAnchors_WhenNotMatching_ReturnsUntrustedCertificateError()
+    {
+        var sampleXml = "<Doc Id=\"d1\"><Data>Sensitive</Data></Doc>";
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert);
+        signResult.IsSuccess.Should().BeTrue();
+
+        using var otherRsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=UnrelatedRoot", otherRsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var unrelatedAnchor = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(10));
+
+        var options = new XmlVerificationOptions
+        {
+            CustomTrustAnchors = new List<X509Certificate2> { unrelatedAnchor }
+        };
+
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(signResult.Value, expectedCertificate: null, options: options);
+        verifyResult.IsFailure.Should().BeTrue();
+        verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.UntrustedCertificate");
+        verifyResult.Error.Description.Should().Be("The embedded certificate in KeyInfo does not chain to any configured custom trust anchor.");
+    }
+
+    [Fact]
+    public void VerifyXml_WithRequireTrustedCertificate_WhenSelfSigned_ReturnsUntrustedCertificateError()
+    {
+        var sampleXml = "<Doc Id=\"d1\"><Data>Sensitive</Data></Doc>";
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert);
+        signResult.IsSuccess.Should().BeTrue();
+
+        var options = new XmlVerificationOptions
+        {
+            RequireTrustedCertificate = true
+        };
+
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(signResult.Value, expectedCertificate: null, options: options);
+        verifyResult.IsFailure.Should().BeTrue();
+        verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.UntrustedCertificate");
+        verifyResult.Error.Description.Should().Contain("The embedded certificate in KeyInfo is not trusted and does not chain to a trusted CA root.");
+    }
+
+    [Fact]
+    public void VerifyXml_WithMalformedReferenceId_ReturnsInvalidReferenceIdError()
+    {
+        var longId = new string('a', 257);
+        var xmlLong = $"<Doc Id=\"{longId}\"><Data>Sensitive</Data></Doc>";
+        var signLong = XmlDigitalSignatureService.Instance.SignXml(xmlLong, _cert, new XmlSigningOptions { ReferenceUri = $"#{longId}" });
+        signLong.IsSuccess.Should().BeTrue();
+        var resLong = XmlDigitalSignatureService.Instance.VerifyXml(signLong.Value, _cert);
+        resLong.IsFailure.Should().BeTrue();
+        resLong.Error.Code.Should().Be("XmlDigitalSignatureService.InvalidReferenceId");
+        resLong.Error.Description.Should().Be("Malformed signature reference ID format.");
+
+        var xmlColon = "<Doc Id=\"foo:bar\"><Data>Sensitive</Data></Doc>";
+        var signColon = XmlDigitalSignatureService.Instance.SignXml(xmlColon, _cert, new XmlSigningOptions { ReferenceUri = "#foo:bar" });
+        if (signColon.IsSuccess)
+        {
+            var resColon = XmlDigitalSignatureService.Instance.VerifyXml(signColon.Value, _cert);
+            resColon.IsFailure.Should().BeTrue();
+            resColon.Error.Code.Should().Be("XmlDigitalSignatureService.InvalidReferenceId");
+        }
+    }
+
+    [Fact]
+    public void VerifyXml_WithRootReferenceUri_SetsSignedElementToDocumentElement()
+    {
+        var sampleXml = "<Doc><Data>Sensitive</Data></Doc>";
+        var options = new XmlSigningOptions { ReferenceUri = "" };
+        var signResult = XmlDigitalSignatureService.Instance.SignXml(sampleXml, _cert, options);
+        signResult.IsSuccess.Should().BeTrue();
+
+        var doc = new XmlDocument { PreserveWhitespace = true };
+        doc.LoadXml(signResult.Value);
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(doc, _cert);
+        verifyResult.IsSuccess.Should().BeTrue();
     }
 }
 

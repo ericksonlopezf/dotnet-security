@@ -127,7 +127,7 @@ public sealed unsafe class Pkcs11DigitalSignatureEngine : IDigitalSignatureEngin
             return 0;
         }
 
-        if (uint.TryParse(keyId.Value, out var parsedHandle) && parsedHandle != 0)
+        if (uint.TryParse(keyId.Value, out var parsedHandle))
         {
             return parsedHandle;
         }

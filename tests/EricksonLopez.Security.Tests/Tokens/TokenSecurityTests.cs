@@ -199,8 +199,21 @@ public sealed class TokenSecurityTests
         Assert.True(success);
         Assert.Equal(64, charsWritten);
 
-        var expectedHash = hasher.HashToken(token);
+        var expectedHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
         Assert.True(destination.SequenceEqual(expectedHash.AsSpan()));
+
+        // Buffer boundaries: maxByteCount <= 256 vs > 256 (ArrayPool rent)
+        var tokenBoundaryStack = new string('A', 85); // 85 * 3 = 255 bytes max <= 256
+        Assert.True(hasher.TryHashToken(tokenBoundaryStack, destination, out _));
+        var tokenBoundaryRent = new string('A', 86); // 86 * 3 = 258 bytes max > 256
+        Assert.True(hasher.TryHashToken(tokenBoundaryRent, destination, out _));
+
+        // Peppered TryHashToken matches HMACSHA256.HashData exactly
+        byte[] pepper = [1, 2, 3, 4, 5, 6, 7, 8];
+        using var pepperedHasher = new HmacSha256TokenHasher(pepper);
+        var expectedHmac = Convert.ToHexString(HMACSHA256.HashData(pepper, System.Text.Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
+        Assert.True(pepperedHasher.TryHashToken(token, destination, out _));
+        Assert.True(destination.SequenceEqual(expectedHmac.AsSpan()));
 
         // Buffer too small returns false
         Span<char> smallDest = stackalloc char[63];

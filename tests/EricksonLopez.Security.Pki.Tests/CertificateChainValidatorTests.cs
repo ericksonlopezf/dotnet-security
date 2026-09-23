@@ -167,4 +167,67 @@ public sealed class CertificateChainValidatorTests : IClassFixture<PkiTestCertif
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Pki.CertificateEkuMismatch");
     }
+
+    [Fact]
+    public void ValidateCertificate_WithMatchingRequiredEku_ReturnsSuccess()
+    {
+        const string serverAuthOid = "1.3.6.1.5.5.7.3.1";
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=LeafClientWithEku", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        req.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+        var ekuCollection = new OidCollection { new Oid(serverAuthOid) };
+        req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(ekuCollection, false));
+
+        var serial = new byte[8];
+        RandomNumberGenerator.Fill(serial);
+        var now = DateTimeOffset.UtcNow;
+        using var cert = req.Create(_fixture.RootCert, now.AddMinutes(-5), now.AddYears(1), serial);
+        using var certWithKey = cert.CopyWithPrivateKey(rsa);
+
+        var validator = new CertificateChainValidator();
+        var options = new CertificateValidationOptions
+        {
+            RevocationMode = X509RevocationMode.NoCheck,
+            CustomTrustAnchors = { _fixture.RootCert },
+            RequiredExtendedKeyUsageOid = serverAuthOid
+        };
+
+        var result = validator.ValidateCertificate(certWithKey, options);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ValidateCertificate_WithMismatchedEkuOid_ReturnsUnauthorized()
+    {
+        const string clientAuthOid = "1.3.6.1.5.5.7.3.2";
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=LeafClientWithClientEku", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        req.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+        var ekuCollection = new OidCollection { new Oid(clientAuthOid) };
+        req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(ekuCollection, false));
+
+        var serial = new byte[8];
+        RandomNumberGenerator.Fill(serial);
+        var now = DateTimeOffset.UtcNow;
+        using var cert = req.Create(_fixture.RootCert, now.AddMinutes(-5), now.AddYears(1), serial);
+        using var certWithKey = cert.CopyWithPrivateKey(rsa);
+
+        var validator = new CertificateChainValidator();
+        var options = new CertificateValidationOptions
+        {
+            RevocationMode = X509RevocationMode.NoCheck,
+            CustomTrustAnchors = { _fixture.RootCert },
+            RequiredExtendedKeyUsageOid = "1.3.6.1.5.5.7.3.1" // Server Authentication
+        };
+
+        var result = validator.ValidateCertificate(certWithKey, options);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Pki.CertificateEkuMismatch");
+        result.Error.Description.Should().Contain("1.3.6.1.5.5.7.3.1");
+    }
 }

@@ -27,6 +27,7 @@ public static class XmlSignatureCertificateExtractor
         try
         {
             var doc = new XmlDocument();
+            // Stryker disable once Initializer : Required for defense-in-depth OWASP XML DTD security configuration
             using var reader = XmlReader.Create(new System.IO.StringReader(xmlContent), new XmlReaderSettings
             {
                 DtdProcessing = DtdProcessing.Prohibit,

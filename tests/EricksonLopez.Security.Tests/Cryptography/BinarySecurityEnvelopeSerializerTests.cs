@@ -434,5 +434,66 @@ public sealed class BinarySecurityEnvelopeSerializerTests
         var result = serializer.Deserialize(serialized);
         Assert.True(result.IsFailure);
         Assert.Equal("Security.InvalidCiphertext", result.Error.Code);
+        Assert.Contains("exceeds maximum", result.Error.Description);
+    }
+
+    [Fact]
+    public void BinarySerializer_Deserialize_SubtleArithmeticTruncations_ReturnsFailureCleanly()
+    {
+        var serializer = BinarySecurityEnvelopeSerializer.Shared;
+
+        // 1. KeyId truncation with keyIdByteCount = (payload.Length - offset) + 1
+        // offset is 4. Let payload length be 45 (>= MinHeaderSize 44). payload.Length - offset = 41. Set keyIdByteCount = 42.
+        byte[] keyIdTrunc = new byte[45];
+        keyIdTrunc[0] = 1; // version
+        keyIdTrunc[1] = (byte)AeadAlgorithm.Aes256Gcm;
+        BinaryPrimitives.WriteUInt16LittleEndian(keyIdTrunc.AsSpan(2), 42);
+        var resKeyId = serializer.Deserialize(keyIdTrunc);
+        Assert.True(resKeyId.IsFailure);
+        Assert.Equal("Malformed envelope: KeyId truncated.", resKeyId.Error.Description);
+
+        // 2. AAD truncation with aadLength = (payload.Length - offset) + 1
+        // Build valid envelope up to AAD length
+        var validKeyId = KeyIdentifier.New();
+        var minEnvelope = new SecurityEnvelope(
+            FormatVersion: 1,
+            Algorithm: AeadAlgorithm.Aes256Gcm,
+            KeyId: validKeyId,
+            KeyVersion: KeyVersion.Initial,
+            Nonce: new byte[12],
+            Tag: new byte[16],
+            Ciphertext: new byte[4],
+            AssociatedData: new byte[4]);
+        byte[] serialized = serializer.Serialize(minEnvelope);
+
+        // Find AAD length offset: 4 (header) + keyIdLen + 4 (ver) + 12 (nonce) + 16 (tag)
+        int keyIdByteCount = Encoding.UTF8.GetByteCount(validKeyId.Value);
+        int aadLenOffset = 4 + keyIdByteCount + 4 + 12 + 16;
+        int remainingAtAad = serialized.Length - (aadLenOffset + 4);
+
+        byte[] aadTrunc = (byte[])serialized.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(aadTrunc.AsSpan(aadLenOffset), remainingAtAad + 1);
+        var resAad = serializer.Deserialize(aadTrunc);
+        Assert.True(resAad.IsFailure);
+        Assert.Equal("Malformed envelope: Invalid AssociatedData length.", resAad.Error.Description);
+
+        // 3. Ciphertext truncation with ciphertextLength = (payload.Length - offset) + 1
+        int cipherLenOffset = aadLenOffset + 4 + 4; // 4 bytes of AAD
+        int remainingAtCipher = serialized.Length - (cipherLenOffset + 4);
+
+        byte[] cipherTrunc = (byte[])serialized.Clone();
+        BinaryPrimitives.WriteInt32LittleEndian(cipherTrunc.AsSpan(cipherLenOffset), remainingAtCipher + 1);
+        var resCipher = serializer.Deserialize(cipherTrunc);
+        Assert.True(resCipher.IsFailure);
+        Assert.Contains("Malformed envelope: Invalid Ciphertext length", resCipher.Error.Description);
+
+        // 4. Exact MaxCiphertextPayloadBytes boundary (must succeed when payload has exactly MaxCiphertextPayloadBytes)
+        int headerPrefixLen = cipherLenOffset + 4;
+        byte[] maxCipherTest = new byte[headerPrefixLen + BinarySecurityEnvelopeSerializer.MaxCiphertextPayloadBytes];
+        serialized.AsSpan(0, headerPrefixLen).CopyTo(maxCipherTest);
+        BinaryPrimitives.WriteInt32LittleEndian(maxCipherTest.AsSpan(cipherLenOffset), BinarySecurityEnvelopeSerializer.MaxCiphertextPayloadBytes);
+        var resMaxCipher = serializer.Deserialize(maxCipherTest);
+        Assert.True(resMaxCipher.IsSuccess);
+        Assert.Equal(BinarySecurityEnvelopeSerializer.MaxCiphertextPayloadBytes, resMaxCipher.Value.Ciphertext.Length);
     }
 }

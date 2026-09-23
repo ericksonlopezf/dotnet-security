@@ -97,6 +97,10 @@ public sealed class DiagnosticsTests
         Assert.Equal("{revocations}", SecurityMeter.KeyRevocationsTotal.Unit);
         Assert.Equal("Total number of cryptographic key revocation events.", SecurityMeter.KeyRevocationsTotal.Description);
 
+        Assert.Equal("security.key.destructions_total", SecurityMeter.KeyDestructionsTotal.Name);
+        Assert.Equal("{destructions}", SecurityMeter.KeyDestructionsTotal.Unit);
+        Assert.Equal("Total number of permanent cryptographic key destruction events.", SecurityMeter.KeyDestructionsTotal.Description);
+
         Assert.Equal("security.apikey.validations_total", SecurityMeter.ApiKeyValidationsTotal.Name);
         Assert.Equal("{validations}", SecurityMeter.ApiKeyValidationsTotal.Unit);
         Assert.Equal("Total number of API key validation attempts.", SecurityMeter.ApiKeyValidationsTotal.Description);

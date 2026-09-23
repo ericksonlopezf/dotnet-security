@@ -441,4 +441,79 @@ public sealed unsafe class Pkcs11HsmAndSignatureEngineTests
         emptyResult.IsFailure.Should().BeTrue();
         emptyResult.Error.Code.Should().Be("Security.KeyNotFound");
     }
+
+    public static Pkcs11NativeLibrary CreatePartialMockNativeLibrary(
+        delegate* unmanaged[Cdecl]<uint, CK_MECHANISM*, uint, uint> cSignInit,
+        delegate* unmanaged[Cdecl]<uint, byte*, uint, byte*, uint*, uint> cSign,
+        delegate* unmanaged[Cdecl]<uint, CK_MECHANISM*, uint, uint> cVerifyInit,
+        delegate* unmanaged[Cdecl]<uint, byte*, uint, byte*, uint, uint> cVerify)
+    {
+        return new Pkcs11NativeLibrary(
+            &MockInitialize,
+            &MockFinalize,
+            &MockOpenSession,
+            &MockCloseSession,
+            &MockLogin,
+            &MockLogout,
+            cSignInit,
+            cSign,
+            &MockFindObjectsInit,
+            &MockFindObjects,
+            &MockFindObjectsFinal,
+            cVerifyInit,
+            cVerify);
+    }
+
+    [Fact]
+    public void DigitalSignatureEngine_Sign_NullFunctionPointers_ReturnsFailure()
+    {
+        var lib1 = CreatePartialMockNativeLibrary(null, &MockSign, &MockVerifyInit, &MockVerify);
+        var session1 = Pkcs11SessionManager.OpenSession(lib1, slotId: 1).Value;
+        var engine1 = new Pkcs11DigitalSignatureEngine(lib1, session1);
+        var sigDest = new byte[64];
+        var res1 = engine1.Sign(new byte[] { 1 }, new KeyIdentifier("k"), sigDest, out _);
+        res1.IsFailure.Should().BeTrue();
+        res1.Error.Description.Should().Contain("does not export C_SignInit or C_Sign");
+
+        var lib2 = CreatePartialMockNativeLibrary(&MockSignInit, null, &MockVerifyInit, &MockVerify);
+        var session2 = Pkcs11SessionManager.OpenSession(lib2, slotId: 1).Value;
+        var engine2 = new Pkcs11DigitalSignatureEngine(lib2, session2);
+        var res2 = engine2.Sign(new byte[] { 1 }, new KeyIdentifier("k"), sigDest, out _);
+        res2.IsFailure.Should().BeTrue();
+        res2.Error.Description.Should().Contain("does not export C_SignInit or C_Sign");
+    }
+
+    [Fact]
+    public void DigitalSignatureEngine_Verify_NullFunctionPointers_ReturnsFailure()
+    {
+        var lib1 = CreatePartialMockNativeLibrary(&MockSignInit, &MockSign, null, &MockVerify);
+        var session1 = Pkcs11SessionManager.OpenSession(lib1, slotId: 1).Value;
+        var engine1 = new Pkcs11DigitalSignatureEngine(lib1, session1);
+        var res1 = engine1.Verify(new byte[] { 1 }, new byte[] { 2 }, new KeyIdentifier("k"));
+        res1.IsFailure.Should().BeTrue();
+        res1.Error.Description.Should().Contain("does not export C_VerifyInit or C_Verify");
+
+        var lib2 = CreatePartialMockNativeLibrary(&MockSignInit, &MockSign, &MockVerifyInit, null);
+        var session2 = Pkcs11SessionManager.OpenSession(lib2, slotId: 1).Value;
+        var engine2 = new Pkcs11DigitalSignatureEngine(lib2, session2);
+        var res2 = engine2.Verify(new byte[] { 1 }, new byte[] { 2 }, new KeyIdentifier("k"));
+        res2.IsFailure.Should().BeTrue();
+        res2.Error.Description.Should().Contain("does not export C_VerifyInit or C_Verify");
+    }
+
+    [Fact]
+    public void DigitalSignatureEngine_NumericKeyHandleResolution_HandlesEdgeCases()
+    {
+        var lib = CreateMockNativeLibrary();
+        var session = Pkcs11SessionManager.OpenSession(lib, slotId: 1).Value;
+        var engine = new Pkcs11DigitalSignatureEngine(lib, session);
+        var sigDest = new byte[64];
+
+        var resZero = engine.Sign(new byte[] { 1 }, new KeyIdentifier("0"), sigDest, out _);
+        resZero.IsFailure.Should().BeTrue();
+        resZero.Error.Code.Should().Be("Security.KeyNotFound");
+
+        var resValid = engine.Sign(new byte[] { 1 }, new KeyIdentifier("42"), sigDest, out _);
+        resValid.IsSuccess.Should().BeTrue();
+    }
 }

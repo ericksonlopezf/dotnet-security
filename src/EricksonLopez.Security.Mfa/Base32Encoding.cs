@@ -107,7 +107,7 @@ public static class Base32Encoding
             throw new FormatException($"Invalid Base32 string length '{cleanInput.Length}' (RFC 4648 prohibits unpadded quantum lengths mod 8 of 1, 3, or 6).");
         }
 
-        if (bitsLeft > 0 && (buffer & ((1u << bitsLeft) - 1)) != 0)
+        if (bitsLeft != 0 && (buffer & ((1u << bitsLeft) - 1)) != 0)
         {
             throw new FormatException("Non-zero padding bits detected in Base32 string (RFC 4648 Section 3.5 violation).");
         }

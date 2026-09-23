@@ -282,6 +282,19 @@ public sealed class HkdfAesGcmEncryptionEngineTests
             var decResult = engine.Decrypt(oversized, key, stackalloc byte[12], stackalloc byte[16], ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
             decResult.IsFailure.Should().BeTrue();
             decResult.Error.Code.Should().Be("Security.PayloadTooLarge");
+
+            // Exact boundary tests (MaxRecommendedPayloadBytes must NOT return PayloadTooLarge)
+            var exactSlice = oversized.AsSpan(0, HkdfAesGcmEncryptionEngine.MaxRecommendedPayloadBytes);
+            var encSpanExact = engine.Encrypt(exactSlice, key, nonceDestination: default, ciphertextDestination: default, tagDestination: default);
+            encSpanExact.IsFailure.Should().BeTrue();
+            encSpanExact.Error.Code.Should().Be("Security.InvalidNonce");
+
+            var decExact = engine.Decrypt(exactSlice, key, nonce: default, tag: default, ReadOnlySpan<byte>.Empty, Span<byte>.Empty, out _);
+            decExact.IsFailure.Should().BeTrue();
+            decExact.Error.Code.Should().Be("Security.InvalidNonce");
+
+            var encExact = engine.Encrypt(exactSlice, key);
+            encExact.IsSuccess.Should().BeTrue();
         }
         catch (OutOfMemoryException)
         {

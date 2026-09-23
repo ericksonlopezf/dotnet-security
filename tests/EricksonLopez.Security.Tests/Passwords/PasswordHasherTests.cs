@@ -623,4 +623,183 @@ public sealed class PasswordHasherTests
         Assert.Equal(PasswordVerificationResult.Failed, LegacyPbkdf2PasswordHasher.Default.VerifyPassword(longPassword, legacyValidHash));
         Assert.Equal(PasswordVerificationResult.Failed, new CompositePasswordHasher().VerifyPassword(longPassword, pbkdf2ValidHash));
     }
+
+    [Fact]
+    public void PasswordHashers_Exact256Characters_And_512CharacterHash_Boundaries()
+    {
+        string exact256 = new('A', 256);
+
+        var pbkdf2 = new Pbkdf2PasswordHasher(iterations: 10_000);
+        var pHash = pbkdf2.HashPassword(exact256);
+        Assert.Equal(PasswordVerificationResult.Success, pbkdf2.VerifyPassword(exact256, pHash));
+
+        var argon2 = new Argon2idPasswordHasher(memorySizeKb: 1024, iterations: 1, parallelism: 1);
+        var aHash = argon2.HashPassword(exact256);
+        Assert.Equal(PasswordVerificationResult.Success, argon2.VerifyPassword(exact256, aHash));
+
+        var legacy = new LegacyPbkdf2PasswordHasher(memorySizeKb: 1024, iterations: 1, parallelism: 1);
+        var lHash = legacy.HashPassword(exact256);
+        Assert.Equal(PasswordVerificationResult.Success, legacy.VerifyPassword(exact256, lHash));
+
+        var composite = new CompositePasswordHasher(primaryHasher: pbkdf2);
+        Assert.Equal(PasswordVerificationResult.Success, composite.VerifyPassword(exact256, pHash));
+
+        // 512 and 513 char hash limits
+        string hash512 = new('X', 512);
+        string hash513 = new('X', 513);
+        Assert.Equal(PasswordVerificationResult.Failed, pbkdf2.VerifyPassword(exact256, hash512));
+        Assert.Equal(PasswordVerificationResult.Failed, pbkdf2.VerifyPassword(exact256, hash513));
+        Assert.Equal(PasswordVerificationResult.Failed, argon2.VerifyPassword(exact256, hash512));
+        Assert.Equal(PasswordVerificationResult.Failed, argon2.VerifyPassword(exact256, hash513));
+        Assert.Equal(PasswordVerificationResult.Failed, legacy.VerifyPassword(exact256, hash512));
+        Assert.Equal(PasswordVerificationResult.Failed, legacy.VerifyPassword(exact256, hash513));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword(exact256, hash512));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword(exact256, hash513));
+    }
+
+    [Fact]
+    public void Argon2idPasswordHasher_ComprehensiveBoundariesAndRehash()
+    {
+        // 1. Constructor parameter boundaries
+        Assert.NotNull(new Argon2idPasswordHasher(iterations: 1));
+        Assert.NotNull(new Argon2idPasswordHasher(iterations: 10));
+        Assert.NotNull(new Argon2idPasswordHasher(memorySizeKb: 1024));
+        Assert.NotNull(new Argon2idPasswordHasher(memorySizeKb: 65536));
+        Assert.Throws<ArgumentOutOfRangeException>("memorySizeKb", () => new Argon2idPasswordHasher(memorySizeKb: 1023));
+        Assert.Throws<ArgumentOutOfRangeException>("memorySizeKb", () => new Argon2idPasswordHasher(memorySizeKb: 65537));
+        Assert.NotNull(new Argon2idPasswordHasher(parallelism: 1));
+        Assert.NotNull(new Argon2idPasswordHasher(parallelism: 16));
+        Assert.Throws<ArgumentOutOfRangeException>("parallelism", () => new Argon2idPasswordHasher(parallelism: 0));
+        Assert.Throws<ArgumentOutOfRangeException>("parallelism", () => new Argon2idPasswordHasher(parallelism: 17));
+        Assert.NotNull(new Argon2idPasswordHasher(saltSizeBytes: 8));
+        Assert.NotNull(new Argon2idPasswordHasher(saltSizeBytes: 64));
+        Assert.Throws<ArgumentOutOfRangeException>("saltSizeBytes", () => new Argon2idPasswordHasher(saltSizeBytes: 7));
+        Assert.Throws<ArgumentOutOfRangeException>("saltSizeBytes", () => new Argon2idPasswordHasher(saltSizeBytes: 65));
+
+        var sut = new Argon2idPasswordHasher(memorySizeKb: 1024, iterations: 1, parallelism: 1);
+        var validSalt = Convert.ToBase64String(new byte[16]);
+        var validHash = Convert.ToBase64String(new byte[32]);
+
+        // 2. Missing parameter tags
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,p=1${validSalt}${validHash}")); // missing t=
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$t=1,p=1${validSalt}${validHash}"));  // missing m=
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1${validSalt}${validHash}")); // missing p=
+
+        // 3. Out-of-bounds parameter values
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=0,p=1${validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=11,p=1${validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1023,t=1,p=1${validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=65537,t=1,p=1${validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=0${validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=17${validSalt}${validHash}"));
+
+        // 4. String length bounds for salt and hash
+        var salt7 = new string('A', 7);
+        var salt129 = new string('A', 129);
+        var hash15 = new string('A', 15);
+        var hash129 = new string('A', 129);
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1${salt7}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1${salt129}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1${validSalt}${hash15}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1${validSalt}${hash129}"));
+
+        // Format exception in base64
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1$not_base64!!!${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$argon2id$v=19$m=1024,t=1,p=1${validSalt}$not_base64!!!"));
+
+        // 5. Rehash needed (different parameters)
+        var lowCostHasher = new Argon2idPasswordHasher(memorySizeKb: 1024, iterations: 1, parallelism: 1);
+        var highCostHasher = new Argon2idPasswordHasher(memorySizeKb: 2048, iterations: 2, parallelism: 2);
+        var lowHash = lowCostHasher.HashPassword("TestPass!");
+        Assert.Equal(PasswordVerificationResult.Success, lowCostHasher.VerifyPassword("TestPass!", lowHash));
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, highCostHasher.VerifyPassword("TestPass!", lowHash));
+        Assert.True(highCostHasher.NeedsRehash(lowHash));
+        Assert.False(lowCostHasher.NeedsRehash(lowHash));
+    }
+
+    [Fact]
+    public void Pbkdf2PasswordHasher_ComprehensiveBoundariesAndRehash()
+    {
+        // 1. Constructor parameter boundaries
+        Assert.NotNull(new Pbkdf2PasswordHasher(iterations: 10_000));
+        Assert.NotNull(new Pbkdf2PasswordHasher(iterations: 600_000));
+        Assert.NotNull(new Pbkdf2PasswordHasher(saltSizeBytes: 8));
+        Assert.NotNull(new Pbkdf2PasswordHasher(saltSizeBytes: 64));
+        Assert.Throws<ArgumentOutOfRangeException>("saltSizeBytes", () => new Pbkdf2PasswordHasher(saltSizeBytes: 7));
+        Assert.Throws<ArgumentOutOfRangeException>("saltSizeBytes", () => new Pbkdf2PasswordHasher(saltSizeBytes: 65));
+        Assert.NotNull(new Pbkdf2PasswordHasher(derivedKeySizeBytes: 16));
+        Assert.NotNull(new Pbkdf2PasswordHasher(derivedKeySizeBytes: 64));
+        Assert.Throws<ArgumentOutOfRangeException>("derivedKeySizeBytes", () => new Pbkdf2PasswordHasher(derivedKeySizeBytes: 15));
+        Assert.Throws<ArgumentOutOfRangeException>("derivedKeySizeBytes", () => new Pbkdf2PasswordHasher(derivedKeySizeBytes: 65));
+
+        var sut = new Pbkdf2PasswordHasher(iterations: 10_000);
+        var validSalt = Convert.ToBase64String(new byte[16]);
+        var validHash = Convert.ToBase64String(new byte[32]);
+
+        // 2. Iterations boundaries
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$pbkdf2-sha512$i=0$s={validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$pbkdf2-sha512$i=-1$s={validSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"$pbkdf2-sha512$i=1000001$s={validSalt}${validHash}"));
+
+        // 3. String length boundaries
+        var shortSalt = new string('A', 10);
+        var longSalt = new string('A', 129);
+        var shortHash = new string('A', 21);
+        var longHash = new string('A', 129);
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${shortSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${longSalt}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${validSalt}${shortHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${validSalt}${longHash}"));
+
+        // Decoded byte limits
+        var salt7 = Convert.ToBase64String(new byte[7]);
+        var salt65 = Convert.ToBase64String(new byte[65]);
+        var hash15 = Convert.ToBase64String(new byte[15]);
+        var hash65 = Convert.ToBase64String(new byte[65]);
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${salt7}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${salt65}${validHash}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${validSalt}${hash15}"));
+        Assert.Equal(PasswordVerificationResult.Failed, sut.VerifyPassword("p", $"PBKDF2.V1$1000${validSalt}${hash65}"));
+
+        // Rehash Needed
+        var hash = sut.HashPassword("MySecretPass!");
+        Assert.Equal(PasswordVerificationResult.Success, sut.VerifyPassword("MySecretPass!", hash));
+        var sutHigh = new Pbkdf2PasswordHasher(iterations: 20_000);
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, sutHigh.VerifyPassword("MySecretPass!", hash));
+    }
+
+    [Fact]
+    public void CompositePasswordHasher_CrossTierAndLegacySpoofedArgon2idFallback()
+    {
+        var pbkdf2 = new Pbkdf2PasswordHasher(iterations: 10_000);
+        var composite = new CompositePasswordHasher(primaryHasher: pbkdf2);
+
+        // 1. Cross-tier PBKDF2.V1 format
+        var saltBytes = new byte[16];
+        var saltBase64 = Convert.ToBase64String(saltBytes);
+        var derivedBytes = System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2("CrossTierPass", saltBytes, 1000, System.Security.Cryptography.HashAlgorithmName.SHA512, 32);
+        var hashBase64 = Convert.ToBase64String(derivedBytes);
+
+        var tier1Valid = $"PBKDF2.V1$1000${saltBase64}${hashBase64}";
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, composite.VerifyPassword("CrossTierPass", tier1Valid));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("WrongPass", tier1Valid));
+
+        // Boundaries in PBKDF2.V1 inside Composite
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$999${saltBase64}${hashBase64}"));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$600001${saltBase64}${hashBase64}"));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000$short${hashBase64}"));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000${new string('A', 129)}${hashBase64}"));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000${saltBase64}$short"));
+        Assert.Equal(PasswordVerificationResult.Failed, composite.VerifyPassword("p", $"PBKDF2.V1$1000${saltBase64}${new string('A', 129)}"));
+
+        // 2. Legacy spoofed Argon2id hash verified via Composite fallback to LegacyPbkdf2PasswordHasher
+        var legacy = new LegacyPbkdf2PasswordHasher(memorySizeKb: 1024, iterations: 1, parallelism: 1);
+        var spoofedHash = legacy.HashPassword("SpoofedPass");
+        // Replace prefix with $argon2id$ to simulate legacy spoofed hash
+        var spoofedArgonHash = string.Concat("$argon2id$", spoofedHash.AsSpan("$legacy-pbkdf2$".Length));
+
+        // When passed to Composite, genuine Argon2id verification fails, and fallback to LegacyPbkdf2PasswordHasher succeeds!
+        var fallbackResult = composite.VerifyPassword("SpoofedPass", spoofedArgonHash);
+        Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, fallbackResult);
+    }
 }

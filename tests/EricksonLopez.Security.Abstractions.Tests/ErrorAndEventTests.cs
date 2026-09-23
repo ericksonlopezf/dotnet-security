@@ -336,4 +336,52 @@ public sealed class ErrorAndEventTests
         Assert.Equal(3, (int)SecurityEventSeverity.High);
         Assert.Equal(4, (int)SecurityEventSeverity.Critical);
     }
+
+    [Fact]
+    public void SecurityError_InvalidNonce_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.InvalidNonce();
+        Assert.Equal("Security.InvalidNonce", errDefault.Code);
+        Assert.Equal("The cryptographic nonce is invalid, of unsupported length, or reused.", errDefault.Description);
+
+        var errCustom = SecurityError.InvalidNonce("Custom invalid nonce details.");
+        Assert.Equal("Security.InvalidNonce", errCustom.Code);
+        Assert.Equal("Custom invalid nonce details.", errCustom.Description);
+    }
+
+    [Fact]
+    public void SecurityError_AuditFailed_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.AuditFailed();
+        Assert.Equal("Security.AuditFailed", errDefault.Code);
+        Assert.Equal("Publishing mandatory security audit event failed.", errDefault.Description);
+
+        var errCustom = SecurityError.AuditFailed("Custom audit failure details.");
+        Assert.Equal("Security.AuditFailed", errCustom.Code);
+        Assert.Equal("Custom audit failure details.", errCustom.Description);
+    }
+
+    [Fact]
+    public void SecurityError_AssociatedDataMismatch_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.AssociatedDataMismatch();
+        Assert.Equal("Security.AssociatedDataMismatch", errDefault.Code);
+        Assert.Equal("The authenticated associated data (AAD) provided does not match the authenticated context in the secret envelope.", errDefault.Description);
+
+        var errCustom = SecurityError.AssociatedDataMismatch("Custom AAD mismatch details.");
+        Assert.Equal("Security.AssociatedDataMismatch", errCustom.Code);
+        Assert.Equal("Custom AAD mismatch details.", errCustom.Description);
+    }
+
+    [Fact]
+    public void SecurityError_PayloadTooLarge_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.PayloadTooLarge();
+        Assert.Equal("Security.PayloadTooLarge", errDefault.Code);
+        Assert.Equal("The payload size exceeds the maximum permitted limit.", errDefault.Description);
+
+        var errCustom = SecurityError.PayloadTooLarge("Custom payload too large details.");
+        Assert.Equal("Security.PayloadTooLarge", errCustom.Code);
+        Assert.Equal("Custom payload too large details.", errCustom.Description);
+    }
 }

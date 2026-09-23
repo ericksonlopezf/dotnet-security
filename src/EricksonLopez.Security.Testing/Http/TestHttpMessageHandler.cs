@@ -123,6 +123,7 @@ public sealed class TestHttpMessageHandler : HttpMessageHandler
     protected override void Dispose(bool disposing)
     {
         IsDisposed = true;
+        // Stryker disable once Statement : Required by CA2215 analyzer
         base.Dispose(disposing);
     }
 }

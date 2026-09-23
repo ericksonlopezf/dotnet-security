@@ -42,12 +42,30 @@ public sealed class ApiKeyValidatorTimingTests
         // When a key doesn't exist, the dummy VerifyToken() call should run without crashing.
         // This validates that the dummy hash path (SC-001 fix) executes successfully.
         var store = new InMemoryApiKeyStore();
-        var validator = new ApiKeyValidator(store);
+        var trackingHasher = new TrackingTokenHasher();
+        var validator = new ApiKeyValidator(store, trackingHasher);
 
         var result = await validator.ValidateApiKeyAsync("ek_live_unknownkeyid_secretpart");
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("Security.InvalidToken");
+        trackingHasher.VerifyCallCount.Should().Be(1);
+        trackingHasher.LastExpectedHash.Should().Be(new string('0', 64));
+    }
+
+    private sealed class TrackingTokenHasher : ITokenHasher
+    {
+        public int VerifyCallCount { get; private set; }
+        public string? LastExpectedHash { get; private set; }
+
+        public string HashToken(ReadOnlySpan<char> token) => new string('0', 64);
+
+        public bool VerifyToken(ReadOnlySpan<char> token, string expectedHash)
+        {
+            VerifyCallCount++;
+            LastExpectedHash = expectedHash;
+            return false;
+        }
     }
 
     [Fact]

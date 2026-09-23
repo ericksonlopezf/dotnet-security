@@ -59,8 +59,80 @@ public sealed class AwsAdaptersTests
     public void Aws_DefaultOptions_ThrowsInvalidOperationException_WhenStubNotEnabled()
     {
         var defaultOptions = Options.Create(new AwsSecurityOptions());
-        Assert.Throws<InvalidOperationException>(() => new AwsSecretsManagerSecretStore(defaultOptions));
-        Assert.Throws<InvalidOperationException>(() => new AwsKmsKeyStore(defaultOptions));
+        var exSecret = Assert.Throws<InvalidOperationException>(() => new AwsSecretsManagerSecretStore(defaultOptions));
+        exSecret.Message.Should().Contain("AwsSecretsManagerSecretStore requires configured Credentials");
+
+        var exKey = Assert.Throws<InvalidOperationException>(() => new AwsKmsKeyStore(defaultOptions));
+        exKey.Message.Should().Contain("AwsKmsKeyStore requires configured KmsKeyId");
+
+        var whitespaceOptions = Options.Create(new AwsSecurityOptions { KmsKeyId = "   ", SecretPrefix = "   " });
+        Assert.Throws<InvalidOperationException>(() => new AwsSecretsManagerSecretStore(whitespaceOptions));
+        Assert.Throws<InvalidOperationException>(() => new AwsKmsKeyStore(whitespaceOptions));
+    }
+
+    [Fact]
+    public void Aws_Constructors_NullArgumentChecks()
+    {
+        var options = CreateOptions();
+        Assert.Throws<ArgumentNullException>(() => new AwsKmsKeyStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<AwsKmsKeyStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new AwsKmsKeyStore(options, null!));
+
+        Assert.Throws<ArgumentNullException>(() => new AwsSecretsManagerSecretStore(null!, Microsoft.Extensions.Logging.Abstractions.NullLogger<AwsSecretsManagerSecretStore>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new AwsSecretsManagerSecretStore(options, null!));
+    }
+
+    [Fact]
+    public void AddAwsSecurity_RegistersServicesAndValidatesNullArguments()
+    {
+        IServiceCollection nullServices = null!;
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddAwsSecurity());
+        Assert.Throws<ArgumentNullException>(() => nullServices.AddAwsSecurity(_ => { }));
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddAwsSecurity(null!));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        services.AddAwsSecurity(o => o.EnableDevelopmentInMemoryStub = true);
+
+        using var provider = services.BuildServiceProvider();
+        var keyStore = provider.GetRequiredService<IKeyStore>();
+        var secretStore = provider.GetRequiredService<ISecretStore>();
+
+        keyStore.Should().NotBeNull().And.BeOfType<AwsKmsKeyStore>();
+        secretStore.Should().NotBeNull().And.BeOfType<AwsSecretsManagerSecretStore>();
+
+        var defaultServices = new ServiceCollection();
+        defaultServices.AddSingleton(typeof(Microsoft.Extensions.Logging.ILogger<>), typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>));
+        defaultServices.AddAwsSecurity();
+        using var defaultProvider = defaultServices.BuildServiceProvider();
+        defaultProvider.GetRequiredService<IOptions<AwsSecurityOptions>>().Value.Region.Should().Be("us-east-1");
+    }
+
+    [Fact]
+    public async Task Aws_Stores_Dispose_ClearsResources()
+    {
+        var options = CreateOptions();
+        var keyStore = new AwsKmsKeyStore(options);
+        var secretStore = new AwsSecretsManagerSecretStore(options);
+
+        var keyId = KeyIdentifier.Prefixed("aws-disp");
+        var version = KeyVersion.Initial;
+        var metadata = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256", DateTimeOffset.UtcNow);
+        var key = new CryptographicKey(metadata, SecretBuffer.CreateRandom(32));
+
+        var saveResult = await keyStore.SaveKeyAsync(key);
+        saveResult.IsSuccess.Should().BeTrue();
+
+        keyStore.Dispose();
+        secretStore.Dispose();
+
+        // Calling Dispose multiple times should be safe
+        keyStore.Dispose();
+        secretStore.Dispose();
+
+        // Stored in-memory keys are cleared upon disposal
+        var getAfterDispose = await keyStore.GetKeyAsync(keyId, version);
+        getAfterDispose.IsFailure.Should().BeTrue();
+        getAfterDispose.Error.Code.Should().Be("Security.KeyNotFound");
     }
 
     [Fact]

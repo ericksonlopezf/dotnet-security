@@ -72,7 +72,6 @@ public sealed class CertificateChainValidator : ICertificateChainValidator
                         if (string.Equals(oid.Value, opt.RequiredExtendedKeyUsageOid, StringComparison.Ordinal))
                         {
                             hasMatchingEku = true;
-                            break;
                         }
                     }
                 }

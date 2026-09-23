@@ -118,6 +118,7 @@ public sealed class HttpMds3MetadataService : IMds3MetadataService, IDisposable
     /// <inheritdoc />
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         await LoadMetadataAsync(cancellationToken);
     }
 
@@ -125,6 +126,8 @@ public sealed class HttpMds3MetadataService : IMds3MetadataService, IDisposable
 
     private async Task<Result> EnsureCacheLoadedAsync(CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         // Fast path: cache is valid
         if (_timeProvider.GetUtcNow() < _cacheExpiresAt && _cache.Count > 0)
         {
@@ -220,105 +223,115 @@ public sealed class HttpMds3MetadataService : IMds3MetadataService, IDisposable
 
     internal static AuthenticatorMetadata? ParseEntry(JsonElement entry)
     {
-        try
-        {
-            Guid? aaguid = null;
-            if (entry.TryGetProperty("aaguid", out var aaguidProp) &&
-                Guid.TryParse(aaguidProp.GetString(), out var parsedAaguid))
-            {
-                aaguid = parsedAaguid;
-            }
-
-            if (aaguid is null)
-            {
-                // FIDO-U2F entries use KeyIdentifier, not AAGUID — not indexable by AAGUID
-                return null;
-            }
-
-            string description = "Unknown authenticator";
-            if (entry.TryGetProperty("metadataStatement", out var stmt) &&
-                stmt.TryGetProperty("description", out var descProp))
-            {
-                description = descProp.GetString() ?? description;
-            }
-
-            var statusReports = new List<AuthenticatorStatusReport>();
-            if (entry.TryGetProperty("statusReports", out var reports))
-            {
-                foreach (var report in reports.EnumerateArray())
-                {
-                    var status = AuthenticatorStatus.NotFidoCertified;
-                    if (report.TryGetProperty("status", out var statusProp))
-                    {
-                        var statusStr = statusProp.GetString();
-                        status = statusStr switch
-                        {
-                            "NOT_FIDO_CERTIFIED" => AuthenticatorStatus.NotFidoCertified,
-                            "FIDO_CERTIFIED" => AuthenticatorStatus.FidoCertified,
-                            "USER_VERIFICATION_BYPASS" => AuthenticatorStatus.UserVerificationBypass,
-                            "ATTESTATION_KEY_COMPROMISE" => AuthenticatorStatus.AttestationKeyCompromise,
-                            "USER_KEY_REMOTE_COMPROMISE" => AuthenticatorStatus.UserKeyRemoteCompromise,
-                            "USER_KEY_PHYSICAL_COMPROMISE" => AuthenticatorStatus.UserKeyPhysicalCompromise,
-                            "UPDATE_AVAILABLE" => AuthenticatorStatus.UpdateAvailable,
-                            "REVOKED" => AuthenticatorStatus.Revoked,
-                            "SELF_ASSERTION_SUBMITTED" => AuthenticatorStatus.SelfAssertionSubmitted,
-                            "FIDO_CERTIFIED_L1+" => AuthenticatorStatus.FidoCertifiedL1Plus,
-                            "FIDO_CERTIFIED_L2" => AuthenticatorStatus.FidoCertifiedL2,
-                            "FIDO_CERTIFIED_L2+" => AuthenticatorStatus.FidoCertifiedL2Plus,
-                            "FIDO_CERTIFIED_L3" => AuthenticatorStatus.FidoCertifiedL3,
-                            "FIDO_CERTIFIED_L3+" => AuthenticatorStatus.FidoCertifiedL3Plus,
-                            _ => AuthenticatorStatus.NotFidoCertified,
-                        };
-                    }
-
-                    string effectiveDate = report.TryGetProperty("effectiveDate", out var dateProp)
-                        ? dateProp.GetString() ?? string.Empty
-                        : string.Empty;
-
-                    statusReports.Add(new AuthenticatorStatusReport(
-                        status,
-                        effectiveDate,
-                        report.TryGetProperty("url", out var url) ? url.GetString() : null,
-                        report.TryGetProperty("certificate", out var cert) ? cert.GetString() : null,
-                        report.TryGetProperty("certificationLevel", out var lvl) ? lvl.GetString() : null));
-                }
-            }
-
-            var rootCerts = new List<byte[]>();
-            if (entry.TryGetProperty("metadataStatement", out var stmt2) &&
-                stmt2.TryGetProperty("attestationRootCertificates", out var certs))
-            {
-                foreach (var certBase64 in certs.EnumerateArray())
-                {
-                    var certStr = certBase64.GetString();
-                    if (certStr is not null)
-                    {
-                        try { rootCerts.Add(Convert.FromBase64String(certStr)); } catch { /* skip malformed */ }
-                    }
-                }
-            }
-
-            string? timeStr = null;
-            if (entry.TryGetProperty("timeOfLastStatusChange", out var timeProp))
-            {
-                timeStr = timeProp.GetString();
-            }
-
-            DateTimeOffset timeOfLastChange = timeStr is not null && DateTimeOffset.TryParse(timeStr, out var parsedTime)
-                ? parsedTime
-                : DateTimeOffset.MinValue;
-
-            return new AuthenticatorMetadata(
-                description,
-                statusReports,
-                rootCerts,
-                timeOfLastChange,
-                aaguid);
-        }
-        catch
+        if (entry.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
+
+        Guid? aaguid = null;
+        if (entry.TryGetProperty("aaguid", out var aaguidProp) &&
+            Guid.TryParse(aaguidProp.GetString(), out var parsedAaguid))
+        {
+            aaguid = parsedAaguid;
+        }
+
+        if (aaguid is null)
+        {
+            // FIDO-U2F entries use KeyIdentifier, not AAGUID — not indexable by AAGUID
+            return null;
+        }
+
+        string description = "Unknown authenticator";
+        if (entry.TryGetProperty("metadataStatement", out var stmt) &&
+            stmt.ValueKind == JsonValueKind.Object &&
+            stmt.TryGetProperty("description", out var descProp))
+        {
+            description = descProp.GetString() ?? description;
+        }
+
+        var statusReports = new List<AuthenticatorStatusReport>();
+        if (entry.TryGetProperty("statusReports", out var reports))
+        {
+            if (reports.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var report in reports.EnumerateArray())
+            {
+                if (report.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var status = AuthenticatorStatus.NotFidoCertified;
+                if (report.TryGetProperty("status", out var statusProp))
+                {
+                    var statusStr = statusProp.GetString();
+                    status = statusStr switch
+                    {
+                        "FIDO_CERTIFIED" => AuthenticatorStatus.FidoCertified,
+                        "USER_VERIFICATION_BYPASS" => AuthenticatorStatus.UserVerificationBypass,
+                        "ATTESTATION_KEY_COMPROMISE" => AuthenticatorStatus.AttestationKeyCompromise,
+                        "USER_KEY_REMOTE_COMPROMISE" => AuthenticatorStatus.UserKeyRemoteCompromise,
+                        "USER_KEY_PHYSICAL_COMPROMISE" => AuthenticatorStatus.UserKeyPhysicalCompromise,
+                        "UPDATE_AVAILABLE" => AuthenticatorStatus.UpdateAvailable,
+                        "REVOKED" => AuthenticatorStatus.Revoked,
+                        "SELF_ASSERTION_SUBMITTED" => AuthenticatorStatus.SelfAssertionSubmitted,
+                        "FIDO_CERTIFIED_L1+" => AuthenticatorStatus.FidoCertifiedL1Plus,
+                        "FIDO_CERTIFIED_L2" => AuthenticatorStatus.FidoCertifiedL2,
+                        "FIDO_CERTIFIED_L2+" => AuthenticatorStatus.FidoCertifiedL2Plus,
+                        "FIDO_CERTIFIED_L3" => AuthenticatorStatus.FidoCertifiedL3,
+                        "FIDO_CERTIFIED_L3+" => AuthenticatorStatus.FidoCertifiedL3Plus,
+                        _ => AuthenticatorStatus.NotFidoCertified,
+                    };
+                }
+
+                string effectiveDate = report.TryGetProperty("effectiveDate", out var dateProp)
+                    ? dateProp.GetString() ?? string.Empty
+                    : string.Empty;
+
+                statusReports.Add(new AuthenticatorStatusReport(
+                    status,
+                    effectiveDate,
+                    report.TryGetProperty("url", out var url) ? url.GetString() : null,
+                    report.TryGetProperty("certificate", out var cert) ? cert.GetString() : null,
+                    report.TryGetProperty("certificationLevel", out var lvl) ? lvl.GetString() : null));
+            }
+        }
+
+        var rootCerts = new List<byte[]>();
+        if (entry.TryGetProperty("metadataStatement", out var stmt2) &&
+            stmt2.ValueKind == JsonValueKind.Object &&
+            stmt2.TryGetProperty("attestationRootCertificates", out var certs) &&
+            certs.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var certBase64 in certs.EnumerateArray())
+            {
+                var certStr = certBase64.GetString();
+                if (certStr is not null)
+                {
+                    try { rootCerts.Add(Convert.FromBase64String(certStr)); } catch { /* skip malformed */ }
+                }
+            }
+        }
+
+        string? timeStr = null;
+        if (entry.TryGetProperty("timeOfLastStatusChange", out var timeProp))
+        {
+            timeStr = timeProp.GetString();
+        }
+
+        DateTimeOffset timeOfLastChange = timeStr is not null && DateTimeOffset.TryParse(timeStr, out var parsedTime)
+            ? parsedTime
+            : DateTimeOffset.MinValue;
+
+        return new AuthenticatorMetadata(
+            description,
+            statusReports,
+            rootCerts,
+            timeOfLastChange,
+            aaguid);
     }
 
     private static byte[] Base64UrlDecode(string base64Url)

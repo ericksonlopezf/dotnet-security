@@ -431,7 +431,7 @@ public sealed class Saml2Service : ISaml2Service
         }
     }
 
-    private const int MaxReplayCacheCapacity = 50000;
+    internal int MaxReplayCacheCapacity { get; set; } = 50000;
 
     internal static Result ValidateAssertionTimestamps(
         XmlElement assertionElement,
