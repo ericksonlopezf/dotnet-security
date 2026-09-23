@@ -344,6 +344,24 @@ public sealed unsafe class Pkcs11HsmAndSignatureEngineTests
     }
 
     [Fact]
+    public void DigitalSignatureEngine_Verify_ExecuteFailed_ReturnsFailure()
+    {
+        _openSessionReturn = Pkcs11Constants.CKR_OK;
+        _verifyInitReturn = Pkcs11Constants.CKR_OK;
+        _verifyReturn = 0x00000005; // CKR_GENERAL_ERROR
+
+        var lib = CreateMockNativeLibrary();
+        var session = Pkcs11SessionManager.OpenSession(lib, slotId: 1).Value;
+        var engine = new Pkcs11DigitalSignatureEngine(lib, session);
+
+        var keyId = new KeyIdentifier("hsm-key-01");
+        var result = engine.Verify(new byte[] { 1 }, new byte[] { 2 }, keyId);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Description.Should().Be("Encryption operation failed: PKCS#11 Verify failed. RV: 0x5");
+    }
+
+    [Fact]
     public void DigitalSignatureEngine_Verify_InitFailed_ReturnsFailure()
     {
         _openSessionReturn = Pkcs11Constants.CKR_OK;

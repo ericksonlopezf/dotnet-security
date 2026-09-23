@@ -78,6 +78,7 @@ public sealed class GoogleCloudKmsKeyStore : IKeyStore, IDisposable
             {
                 _kmsClient = _options.KmsClient;
             }
+            // Stryker disable once Block,String : Google Cloud KMS client factory via Application Default Credentials
             else if (!string.IsNullOrWhiteSpace(_options.ProjectId))
             {
                 _kmsClient = KeyManagementServiceClient.Create();
@@ -89,6 +90,7 @@ public sealed class GoogleCloudKmsKeyStore : IKeyStore, IDisposable
                     "or EnableDevelopmentInMemoryStub = true for testing environments.");
             }
 
+            // Stryker disable once NullCoalescing,Conditional,String : Google Cloud SecretManager client factory via Application Default Credentials
             _secretClient = _options.SecretManagerClient ?? (!string.IsNullOrWhiteSpace(_options.ProjectId) ? SecretManagerServiceClient.Create() : null);
         }
     }
@@ -251,9 +253,12 @@ public sealed class GoogleCloudKmsKeyStore : IKeyStore, IDisposable
             root.TryGetProperty("expires_at", out var eProp);
             root.TryGetProperty("revoked_at", out var rProp);
 
-            var rawBytes = bytesProp.ValueKind == JsonValueKind.String
-                ? Convert.FromBase64String(bytesProp.GetString() ?? string.Empty)
-                : Array.Empty<byte>();
+            if (bytesProp.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(bytesProp.GetString()))
+            {
+                return SecurityError.InvalidCiphertext("Google Cloud secret payload missing or invalid cryptographic key bytes.");
+            }
+
+            var rawBytes = Convert.FromBase64String(bytesProp.GetString()!);
 
             if (_kmsClient is not null && !string.IsNullOrWhiteSpace(_options.KmsCryptoKeyId) && !string.IsNullOrWhiteSpace(_options.LocationId) && !string.IsNullOrWhiteSpace(_options.KeyRingId))
             {

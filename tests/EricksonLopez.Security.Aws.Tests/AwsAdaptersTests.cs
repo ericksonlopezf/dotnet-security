@@ -807,20 +807,27 @@ public sealed class AwsAdaptersTests
             ms.ToArray().Should().Equal(encryptedBlob);
         }
 
-        // Missing key_bytes property in JSON uses empty fallback
+        // Missing key_bytes property in JSON uses empty fallback (empty ciphertext)
         var jsonNoBytes = JsonSerializer.Serialize(new
         {
             key_id = keyId.Value,
-            version = "1"
+            version = "1",
+            key_bytes = (string?)null
         });
         secretsMock.GetSecretValueAsync(
             Arg.Is<GetSecretValueRequest>(r => r.SecretId.Contains("nobytes")),
             Arg.Any<CancellationToken>())
             .Returns(new GetSecretValueResponse { SecretString = jsonNoBytes });
 
+        kmsMock.DecryptAsync(
+            Arg.Is<DecryptRequest>(r => r.CiphertextBlob != null && r.CiphertextBlob.Length == 0),
+            Arg.Any<CancellationToken>())
+            .Returns(new DecryptResponse { Plaintext = new MemoryStream([42, 43, 44]) });
+
         var noBytesResult = await store.GetKeyAsync(KeyIdentifier.Prefixed("nobytes"), version);
-        noBytesResult.IsFailure.Should().BeTrue();
-        noBytesResult.Error.Description.Should().Contain("AWS retrieve/decrypt failed");
+        noBytesResult.IsSuccess.Should().BeTrue();
+        using var noBytesKey = noBytesResult.Value;
+        noBytesKey.GetKeyBytes().ToArray().Should().Equal([42, 43, 44]);
 
         // GetSecretValue returns null/whitespace SecretString
         secretsMock.GetSecretValueAsync(
@@ -860,6 +867,38 @@ public sealed class AwsAdaptersTests
         var listResult = await store.ListMetadataAsync();
         listResult.IsSuccess.Should().BeTrue();
         listResult.Value.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AwsKmsKeyStore_LiveClient_SaveKeyAsync_EmptyKmsKeyId_PassesNullKmsKeyId()
+    {
+        var secretsMock = Substitute.For<IAmazonSecretsManager>();
+        var kmsMock = Substitute.For<IAmazonKeyManagementService>();
+        var options = new AwsSecurityOptions
+        {
+            KmsClient = kmsMock,
+            SecretsManagerClient = secretsMock,
+            KmsKeyId = "",
+            EnableDevelopmentInMemoryStub = false
+        };
+        CreateSecretRequest? capturedRequest = null;
+        secretsMock.PutSecretValueAsync(Arg.Any<PutSecretValueRequest>(), Arg.Any<CancellationToken>())
+            .Throws(new ResourceNotFoundException("Secret does not exist"));
+        secretsMock.CreateSecretAsync(Arg.Do<CreateSecretRequest>(r => capturedRequest = r), Arg.Any<CancellationToken>())
+            .Returns(new CreateSecretResponse());
+
+        kmsMock.EncryptAsync(Arg.Any<EncryptRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new EncryptResponse { CiphertextBlob = new MemoryStream([1, 2, 3]) });
+
+        using var store = new AwsKmsKeyStore(Options.Create(options));
+        var key = new CryptographicKey(
+            new KeyMetadata(KeyIdentifier.Prefixed("testkey"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow),
+            SecretBuffer.FromSpan([1, 2, 3]));
+
+        var result = await store.SaveKeyAsync(key);
+        result.IsSuccess.Should().BeTrue();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.KmsKeyId.Should().BeNull();
     }
 
     [Fact]

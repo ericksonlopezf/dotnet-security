@@ -66,6 +66,8 @@ public sealed class HttpMds3MetadataServiceTests
                     },
                     statusReports = new object[]
                     {
+                        "non-object-string",
+                        12345,
                         new
                         {
                             status = "FIDO_CERTIFIED_L2",

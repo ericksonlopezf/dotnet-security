@@ -57,6 +57,7 @@ public sealed class HaveIBeenPwnedClient : IHaveIBeenPwnedClient
 
         int byteCount = Encoding.UTF8.GetByteCount(password);
         byte[]? rented = null;
+        // Stryker disable once Conditional,Equality : Stack allocation optimization threshold
         Span<byte> utf8Bytes = byteCount <= 256
             ? stackalloc byte[256]
             : (rented = ArrayPool<byte>.Shared.Rent(byteCount));

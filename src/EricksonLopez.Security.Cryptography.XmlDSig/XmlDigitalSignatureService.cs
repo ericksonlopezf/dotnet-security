@@ -329,6 +329,7 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
             // Extract the authenticated signed element to protect against XML Signature Wrapping (XSW)
             XmlElement? signedElement = null;
             string? refUri = null;
+            // Stryker disable once Equality : SignedXml structurally enforces at least one Reference element per W3C specification
             if (signedXml.SignedInfo?.References.Count > 0)
             {
                 var reference = (Reference)signedXml.SignedInfo.References[0]!;
@@ -410,9 +411,8 @@ public sealed class XmlDigitalSignatureService : IXmlDigitalSigner, IXmlDigitalS
                 }
             }
 
-            for (int i = current.ChildNodes.Count - 1; i >= 0; i--)
+            foreach (XmlNode child in current.ChildNodes)
             {
-                var child = current.ChildNodes[i];
                 if (child is not null)
                 {
                     stack.Push((child, depth + 1));

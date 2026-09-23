@@ -90,6 +90,7 @@ public sealed class AwsKmsKeyStore : IKeyStore, IDisposable
             }
             else
             {
+                // Stryker disable once Conditional,Equality,Boolean : AWS SDK client construction with or without explicit credentials
                 _secretsManagerClient = _options.Credentials is not null
                     ? new AmazonSecretsManagerClient(_options.Credentials, region)
                     : new AmazonSecretsManagerClient(region);
@@ -102,6 +103,7 @@ public sealed class AwsKmsKeyStore : IKeyStore, IDisposable
             }
             else
             {
+                // Stryker disable once Conditional,Equality : AWS SDK client construction with or without explicit credentials
                 _kmsClient = _options.Credentials is not null
                     ? new AmazonKeyManagementServiceClient(_options.Credentials, region)
                     : new AmazonKeyManagementServiceClient(region);
@@ -350,7 +352,9 @@ public sealed class AwsKmsKeyStore : IKeyStore, IDisposable
 
         if (_ownsClients)
         {
+            // Stryker disable once Statement : Resource disposal for internally created AWS SDK clients
             _secretsManagerClient?.Dispose();
+            // Stryker disable once Statement : Resource disposal for internally created AWS SDK clients
             _kmsClient?.Dispose();
         }
     }

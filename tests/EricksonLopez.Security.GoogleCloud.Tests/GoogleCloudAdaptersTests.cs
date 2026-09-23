@@ -1054,4 +1054,288 @@ public sealed class GoogleCloudAdaptersTests
         result.Value.Metadata.ExpiresAtUtc.Should().BeNull();
         result.Value.Metadata.RevokedAtUtc.Should().BeNull();
     }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_GetKeyAsync_ExplicitJsonMetadata_ParsedCorrectly()
+    {
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var rawKey = new byte[32];
+        rawKey[0] = 99;
+        var fixedDate = new DateTimeOffset(2023, 5, 10, 12, 0, 0, TimeSpan.Zero);
+        var json = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["key_bytes"] = Convert.ToBase64String(rawKey),
+            ["key_id"] = "explicit-key-id",
+            ["version"] = "42",
+            ["purpose"] = "KeyWrapping",
+            ["status"] = "Destroyed",
+            ["algorithm"] = "CHACHA20-POLY1305",
+            ["created_at"] = fixedDate.ToString("O")
+        });
+
+        sm.AccessSecretVersionAsync(
+            Arg.Any<SecretVersionName>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        var keyId = KeyIdentifier.Prefixed("fallback-key");
+        var version = new KeyVersion(1);
+        var result = await store.GetKeyAsync(keyId, version);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Metadata.KeyId.Value.Should().StartWith("explicit-key-id-");
+        result.Value.Metadata.Version.Value.Should().Be(42);
+        result.Value.Metadata.Purpose.Should().Be(KeyPurpose.KeyWrapping);
+        result.Value.Metadata.Status.Should().Be(KeyStatus.Destroyed);
+        result.Value.Metadata.AlgorithmId.Should().Be("CHACHA20-POLY1305");
+        result.Value.Metadata.CreatedAtUtc.Should().Be(fixedDate);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task GoogleCloudKeyStore_GetKeyAsync_MissingOrEmptyBytes_ReturnsInvalidCiphertext(string? keyBytesVal)
+    {
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var json = JsonSerializer.Serialize(new Dictionary<string, string?>
+        {
+            ["key_bytes"] = keyBytesVal,
+            ["key_id"] = "test-key",
+            ["version"] = "1"
+        });
+
+        sm.AccessSecretVersionAsync(
+            Arg.Any<SecretVersionName>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        var result = await store.GetKeyAsync(KeyIdentifier.Prefixed("test-key"), KeyVersion.Initial);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Description.Should().Contain("Google Cloud secret payload missing or invalid cryptographic key bytes.");
+    }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_PartialKmsOptions_BypassesKmsEnvelope()
+    {
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var kmsMock = Substitute.For<KeyManagementServiceClient>();
+
+        // Test combination 1: KmsCryptoKeyId is empty string
+        var options1 = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kmsMock,
+            KeyRingId = "my-ring",
+            LocationId = "global",
+            KmsCryptoKeyId = "",
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store1 = new GoogleCloudKmsKeyStore(options1);
+
+        sm.CreateSecretAsync(Arg.Any<ProjectName>(), Arg.Any<string>(), Arg.Any<Secret>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new Secret()));
+        sm.AddSecretVersionAsync(Arg.Any<SecretName>(), Arg.Any<SecretPayload>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretVersion()));
+
+        var key = new CryptographicKey(
+            new KeyMetadata(KeyIdentifier.Prefixed("k1"), KeyVersion.Initial, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow),
+            SecretBuffer.FromSpan([1, 2, 3]));
+
+        var save1 = await store1.SaveKeyAsync(key);
+        save1.IsSuccess.Should().BeTrue();
+
+        // Test combination 2: KeyRingId is empty string
+        var options2 = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kmsMock,
+            KeyRingId = "",
+            LocationId = "global",
+            KmsCryptoKeyId = "my-key",
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store2 = new GoogleCloudKmsKeyStore(options2);
+        var save2 = await store2.SaveKeyAsync(key);
+        save2.IsSuccess.Should().BeTrue();
+
+        // Test combination 3: LocationId is empty string
+        var options3 = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kmsMock,
+            KeyRingId = "my-ring",
+            LocationId = "",
+            KmsCryptoKeyId = "my-key",
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store3 = new GoogleCloudKmsKeyStore(options3);
+        var save3 = await store3.SaveKeyAsync(key);
+        save3.IsSuccess.Should().BeTrue();
+
+        // Also verify GetKeyAsync bypasses KMS decrypt when partial options
+        var json = GoogleCloudKmsKeyStore.SerializeKeyRecord(key.Metadata, [1, 2, 3]);
+        sm.AccessSecretVersionAsync(Arg.Any<SecretVersionName>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+        var get1 = await store1.GetKeyAsync(key.Metadata.KeyId, key.Metadata.Version);
+        get1.IsSuccess.Should().BeTrue();
+        get1.Value.GetKeyBytes().ToArray().Should().Equal([1, 2, 3]);
+    }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_LiveClient_UpdateStatus_Retired_KeepsRevokedAtNull()
+    {
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var keyId = KeyIdentifier.Prefixed("retire-key");
+        var version = KeyVersion.Initial;
+        var rawKey = new byte[32];
+        var json = GoogleCloudKmsKeyStore.SerializeKeyRecord(
+            new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow, null, null),
+            rawKey);
+
+        sm.AccessSecretVersionAsync(Arg.Any<SecretVersionName>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        SecretPayload? addedPayload = null;
+        sm.AddSecretVersionAsync(Arg.Any<SecretName>(), Arg.Do<SecretPayload>(p => addedPayload = p), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new SecretVersion()));
+
+        var result = await store.UpdateStatusAsync(keyId, version, KeyStatus.Retired);
+        result.IsSuccess.Should().BeTrue();
+        addedPayload.Should().NotBeNull();
+        var updatedJson = addedPayload!.Data.ToStringUtf8();
+        updatedJson.Should().Contain("\"status\":\"Retired\"");
+        updatedJson.Should().NotContain("\"revoked_at\"");
+    }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_GetKeyAsync_NonStringProperties_FallbackToDefaults()
+    {
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var validKeyBytes = Convert.ToBase64String(new byte[32]);
+        var json = $$"""
+        {
+            "key_bytes": "{{validKeyBytes}}",
+            "key_id": 999,
+            "version": 888,
+            "purpose": 777,
+            "status": 666,
+            "algorithm": 555,
+            "created_at": 444,
+            "expires_at": 333,
+            "revoked_at": 222
+        }
+        """;
+
+        sm.AccessSecretVersionAsync(
+            Arg.Any<SecretVersionName>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        var fallbackKeyId = KeyIdentifier.Prefixed("default-key");
+        var fallbackVersion = new KeyVersion(5);
+        var result = await store.GetKeyAsync(fallbackKeyId, fallbackVersion);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Metadata.KeyId.Should().Be(fallbackKeyId);
+        result.Value.Metadata.Version.Should().Be(fallbackVersion);
+        result.Value.Metadata.Purpose.Should().Be(KeyPurpose.Encryption);
+        result.Value.Metadata.Status.Should().Be(KeyStatus.Active);
+        result.Value.Metadata.AlgorithmId.Should().Be("AES-256-GCM");
+        result.Value.Metadata.ExpiresAtUtc.Should().BeNull();
+        result.Value.Metadata.RevokedAtUtc.Should().BeNull();
+        result.Value.GetKeyBytes().ToArray().Should().HaveCount(32);
+    }
+
+    [Fact]
+    public async Task GoogleCloudKeyStore_GetKeyAsync_NonStringKeyBytes_ReturnsInvalidCiphertext()
+    {
+        var kms = Substitute.For<KeyManagementServiceClient>();
+        var sm = Substitute.For<SecretManagerServiceClient>();
+        var options = Options.Create(new GoogleCloudSecurityOptions
+        {
+            ProjectId = "test-proj",
+            KmsClient = kms,
+            SecretManagerClient = sm,
+            EnableDevelopmentInMemoryStub = false
+        });
+        using var store = new GoogleCloudKmsKeyStore(options);
+
+        var json = """
+        {
+            "key_bytes": 12345,
+            "key_id": "test-key"
+        }
+        """;
+
+        sm.AccessSecretVersionAsync(
+            Arg.Any<SecretVersionName>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new AccessSecretVersionResponse
+            {
+                Payload = new SecretPayload { Data = ByteString.CopyFromUtf8(json) }
+            }));
+
+        var result = await store.GetKeyAsync(KeyIdentifier.Prefixed("test-key"), KeyVersion.Initial);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Description.Should().Contain("Google Cloud secret payload missing or invalid cryptographic key bytes.");
+    }
 }

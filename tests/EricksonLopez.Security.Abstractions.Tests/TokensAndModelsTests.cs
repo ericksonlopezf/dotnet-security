@@ -125,4 +125,29 @@ public sealed class TokensAndModelsTests
         Assert.Equal("Too short", evt6.ViolationDetails);
         Assert.Equal("/auth", evt6.TargetResource);
     }
+
+    private sealed class DefaultTokenGenerator : ITokenGenerator
+    {
+        public OpaqueToken GenerateToken(int byteLength = 32) => throw new NotImplementedException();
+        public string GenerateUrlSafeToken(int byteLength = 32) => "TOKEN_123456";
+        public string GenerateHexToken(int byteLength = 32) => "abcdef";
+        public string GenerateNumericCode(int digits = 6) => "123456";
+    }
+
+    [Fact]
+    public void ITokenGenerator_TryGenerateUrlSafeToken_DefaultImplementation_Tests()
+    {
+        ITokenGenerator generator = new DefaultTokenGenerator();
+        Span<char> tooSmall = stackalloc char[5];
+        bool failed = generator.TryGenerateUrlSafeToken(tooSmall, 32, out int charsWritten);
+        Assert.False(failed);
+        Assert.Equal(0, charsWritten);
+
+        Span<char> exact = stackalloc char[12];
+        bool success = generator.TryGenerateUrlSafeToken(exact, 32, out charsWritten);
+        Assert.True(success);
+        Assert.Equal(12, charsWritten);
+        Assert.Equal("TOKEN_123456", exact.ToString());
+    }
 }
+

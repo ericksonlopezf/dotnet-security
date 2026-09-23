@@ -135,6 +135,21 @@ public sealed class PrimitivesTests
         Assert.False(r1.Equals((object?)null));
         Assert.False(r1.Equals("not-a-redacted"));
         Assert.False(r1.Equals(42));
+
+        // Byte array equality (FixedTimeEquals path vs reference/default equality)
+        byte[] bytes1 = [1, 2, 3];
+        byte[] bytes2 = [1, 2, 3];
+        byte[] bytes3 = [1, 2, 4];
+        var rBytes1 = new Redacted<byte[]>(bytes1);
+        var rBytes2 = new Redacted<byte[]>(bytes2);
+        var rBytes3 = new Redacted<byte[]>(bytes3);
+
+        Assert.True(rBytes1.Equals(rBytes2));
+        Assert.True(rBytes1 == rBytes2);
+        Assert.False(rBytes1 != rBytes2);
+        Assert.False(rBytes1.Equals(rBytes3));
+        Assert.False(rBytes1 == rBytes3);
+        Assert.True(rBytes1 != rBytes3);
     }
 
     // ==========================================

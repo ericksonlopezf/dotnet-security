@@ -66,6 +66,7 @@ public sealed class GoogleCloudSecretManagerStore : ISecretStore
             {
                 _client = _options.SecretManagerClient;
             }
+            // Stryker disable once Block,String : Google Cloud SecretManager client factory via Application Default Credentials
             else if (!string.IsNullOrWhiteSpace(_options.ProjectId))
             {
                 _client = SecretManagerServiceClient.Create();

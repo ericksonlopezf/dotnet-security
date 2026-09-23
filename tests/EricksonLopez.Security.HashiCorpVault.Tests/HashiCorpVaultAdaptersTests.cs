@@ -1141,4 +1141,349 @@ public sealed class HashiCorpVaultAdaptersTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => client.WriteKeyDataAsync(keyId, version, meta, new byte[] { 1 }, CancellationToken.None).AsTask());
         await Assert.ThrowsAsync<ObjectDisposedException>(() => client.UpdateKeyStatusAsync(keyId, version, KeyStatus.Revoked, CancellationToken.None).AsTask());
     }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_EnsureTokenAsync_DoubleCheckedTokenCachingAndLeaseDuration()
+    {
+        var loginCount = 0;
+        var httpClient = CreateMockHttpClient(req =>
+        {
+            var uri = req.RequestUri?.ToString() ?? string.Empty;
+            if (uri.Contains("auth/approle/login", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref loginCount);
+                req.Content.Should().NotBeNull();
+                req.Content!.Headers.ContentType!.MediaType.Should().Be("application/json");
+                req.Content.Headers.ContentType.CharSet.Should().Be("utf-8");
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"auth\":{\"client_token\":\"test-approle-token\",\"lease_duration\":120}}")
+                });
+            }
+
+            if (uri.Contains("secret/data/cache-test", StringComparison.Ordinal))
+            {
+                req.Headers.Contains("X-Vault-Token").Should().BeTrue();
+                req.Headers.GetValues("X-Vault-Token").First().Should().Be("test-approle-token");
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"data\":{\"data\":{\"value\":\"cache-val\"}}}")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "test-role",
+            SecretId = "test-secret",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+
+        // First call triggers login
+        var res1 = await client.ReadKvSecretAsync("cache-test", CancellationToken.None);
+        res1.IsSuccess.Should().BeTrue();
+        res1.Value.Should().Be("cache-val");
+        loginCount.Should().Be(1);
+        client.ClientToken.Should().Be("test-approle-token");
+        client.TokenExpiresAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow.AddSeconds(90), TimeSpan.FromSeconds(5));
+
+        // Second call uses cached token without calling login again
+        var res2 = await client.ReadKvSecretAsync("cache-test", CancellationToken.None);
+        res2.IsSuccess.Should().BeTrue();
+        loginCount.Should().Be(1);
+
+        // Test with lease_duration = 10 (Math.Max(30, -20) => 30)
+        var client10 = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "r",
+            SecretId = "s",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"auth\":{\"client_token\":\"tok10\",\"lease_duration\":10}}")
+            })),
+            EnableDevelopmentInMemoryStub = false
+        });
+        using (client10)
+        {
+            await client10.ReadKvSecretAsync("any", CancellationToken.None);
+            client10.TokenExpiresAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow.AddSeconds(30), TimeSpan.FromSeconds(5));
+        }
+
+        // Test with omitted lease_duration (fallback to 3600 => 3570)
+        var clientFallback = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "r",
+            SecretId = "s",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"auth\":{\"client_token\":\"tok-fallback\"}}")
+            })),
+            EnableDevelopmentInMemoryStub = false
+        });
+        using (clientFallback)
+        {
+            await clientFallback.ReadKvSecretAsync("any", CancellationToken.None);
+            clientFallback.TokenExpiresAtUtc.Should().BeCloseTo(DateTimeOffset.UtcNow.AddSeconds(3570), TimeSpan.FromSeconds(5));
+        }
+
+        // Concurrent calls test (lock contention triggers inner double-check)
+        var concurrentClient = new HashiCorpVaultClient(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            RoleId = "r",
+            SecretId = "s",
+            HttpClient = CreateMockHttpClient(async req =>
+            {
+                if (req.RequestUri?.ToString().Contains("auth/approle/login", StringComparison.Ordinal) == true)
+                {
+                    await Task.Delay(25);
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("{\"auth\":{\"client_token\":\"concurrent-tok\",\"lease_duration\":300}}")
+                    };
+                }
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"data\":{\"data\":{\"value\":\"concurrent-val\"}}}")
+                };
+            }),
+            EnableDevelopmentInMemoryStub = false
+        });
+        using (concurrentClient)
+        {
+            var taskA = concurrentClient.ReadKvSecretAsync("a", CancellationToken.None).AsTask();
+            var taskB = concurrentClient.ReadKvSecretAsync("b", CancellationToken.None).AsTask();
+            var results = await Task.WhenAll(taskA, taskB);
+            results[0].IsSuccess.Should().BeTrue();
+            results[1].IsSuccess.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public void HashiCorpVaultClient_SerializationMethods_VerifyJsonOutputs()
+    {
+        // 1. SerializeAppRoleLogin
+        var loginBytes = HashiCorpVaultClient.SerializeAppRoleLogin("role-alpha", "secret-beta");
+        using (var doc = JsonDocument.Parse(loginBytes))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("role_id").GetString().Should().Be("role-alpha");
+            root.GetProperty("secret_id").GetString().Should().Be("secret-beta");
+        }
+
+        // 2. SerializeKvSecretWrite
+        var kvBytes = HashiCorpVaultClient.SerializeKvSecretWrite("super-secret-password");
+        using (var doc = JsonDocument.Parse(kvBytes))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("data").GetProperty("value").GetString().Should().Be("super-secret-password");
+        }
+
+        // 3. SerializeKeyDataWrite
+        var keyId = KeyIdentifier.Prefixed("k-test");
+        var version = new KeyVersion(3);
+        var now = DateTimeOffset.UtcNow;
+        var exp = now.AddDays(30);
+        var rev = now.AddDays(5);
+        var meta = new KeyMetadata(keyId, version, KeyPurpose.Signing, KeyStatus.Retired, "HMAC-SHA256", now, exp, rev);
+        var rawKey = new byte[] { 10, 20, 30, 40 };
+
+        var keyBytes = HashiCorpVaultClient.SerializeKeyDataWrite(keyId, version, meta, rawKey);
+        using (var doc = JsonDocument.Parse(keyBytes))
+        {
+            var data = doc.RootElement.GetProperty("data");
+            data.GetProperty("key_bytes").GetString().Should().Be(Convert.ToBase64String(rawKey));
+            data.GetProperty("key_id").GetString().Should().Be(keyId.Value);
+            data.GetProperty("version").GetString().Should().Be("3");
+            data.GetProperty("purpose").GetString().Should().Be("Signing");
+            data.GetProperty("status").GetString().Should().Be("Retired");
+            data.GetProperty("algorithm").GetString().Should().Be("HMAC-SHA256");
+            data.GetProperty("created_at").GetString().Should().Contain("T");
+            data.GetProperty("expires_at").GetString().Should().Contain("T");
+            data.GetProperty("revoked_at").GetString().Should().Contain("T");
+        }
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultClient_ReadKeyDataAsync_ExplicitMetadata_ParsedCorrectly()
+    {
+        var fixedDate = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
+        var expDate = fixedDate.AddDays(60);
+        var revDate = fixedDate.AddDays(10);
+        var rawKey = new byte[] { 1, 2, 3, 4, 5 };
+
+        var httpClient = CreateMockHttpClient(_ =>
+        {
+            var json = JsonSerializer.Serialize(new
+            {
+                data = new
+                {
+                    data = new Dictionary<string, string>
+                    {
+                        ["key_bytes"] = Convert.ToBase64String(rawKey),
+                        ["key_id"] = "explicit-vault-id",
+                        ["version"] = "99",
+                        ["purpose"] = "KeyWrapping",
+                        ["status"] = "Destroyed",
+                        ["algorithm"] = "CHACHA20-POLY1305",
+                        ["created_at"] = fixedDate.ToString("O"),
+                        ["expires_at"] = expDate.ToString("O"),
+                        ["revoked_at"] = revDate.ToString("O")
+                    }
+                }
+            });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json)
+            });
+        });
+
+        var options = new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        };
+
+        using var client = new HashiCorpVaultClient(options);
+        var result = await client.ReadKeyDataAsync(KeyIdentifier.Prefixed("fallback-key"), new KeyVersion(1), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var (metadata, keyBytes) = result.Value;
+        keyBytes.Should().Equal(rawKey);
+        metadata.KeyId.Value.Should().StartWith("explicit-vault-id-");
+        metadata.Version.Value.Should().Be(99);
+        metadata.Purpose.Should().Be(KeyPurpose.KeyWrapping);
+        metadata.Status.Should().Be(KeyStatus.Destroyed);
+        metadata.AlgorithmId.Should().Be("CHACHA20-POLY1305");
+        metadata.CreatedAtUtc.Should().Be(fixedDate);
+        metadata.ExpiresAtUtc.Should().Be(expDate);
+        metadata.RevokedAtUtc.Should().Be(revDate);
+    }
+
+    [Fact]
+    public async Task HashiCorpVaultKeyStore_UpdateStatusAsync_Behaviors()
+    {
+        // 1. In-memory stub behavior
+        var stubOptions = Options.Create(new HashiCorpVaultOptions { EnableDevelopmentInMemoryStub = true });
+        using var stubStore = new HashiCorpVaultKeyStore(stubOptions);
+
+        var keyId = KeyIdentifier.Prefixed("stub-key");
+        var version = KeyVersion.Initial;
+        var meta = new KeyMetadata(keyId, version, KeyPurpose.Encryption, KeyStatus.Active, "AES-256-GCM", DateTimeOffset.UtcNow);
+        var cryptoKey = new CryptographicKey(meta, SecretBuffer.FromSpan([1, 2, 3]));
+        await stubStore.SaveKeyAsync(cryptoKey);
+
+        // Update to Retired keeps RevokedAtUtc null
+        var retRes = await stubStore.UpdateStatusAsync(keyId, version, KeyStatus.Retired);
+        retRes.IsSuccess.Should().BeTrue();
+        var keyRet = await stubStore.GetKeyAsync(keyId, version);
+        keyRet.Value.Metadata.Status.Should().Be(KeyStatus.Retired);
+        keyRet.Value.Metadata.RevokedAtUtc.Should().BeNull();
+
+        // Update to Revoked sets RevokedAtUtc
+        var revRes = await stubStore.UpdateStatusAsync(keyId, version, KeyStatus.Revoked);
+        revRes.IsSuccess.Should().BeTrue();
+        var keyRev = await stubStore.GetKeyAsync(keyId, version);
+        keyRev.Value.Metadata.Status.Should().Be(KeyStatus.Revoked);
+        keyRev.Value.Metadata.RevokedAtUtc.Should().NotBeNull();
+
+        // Non-existent key in stub
+        var missRes = await stubStore.UpdateStatusAsync(KeyIdentifier.Prefixed("missing"), version, KeyStatus.Retired);
+        missRes.IsFailure.Should().BeTrue();
+        missRes.Error.Code.Should().Be("Security.KeyNotFound");
+
+        // 2. Live client behavior
+        string? writtenJson = null;
+        var httpClient = CreateMockHttpClient(async req =>
+        {
+            if (req.Method == HttpMethod.Get)
+            {
+                var json = JsonSerializer.Serialize(new
+                {
+                    data = new
+                    {
+                        data = new Dictionary<string, string>
+                        {
+                            ["key_bytes"] = Convert.ToBase64String(new byte[] { 10, 20 }),
+                            ["key_id"] = "live-key",
+                            ["version"] = "1",
+                            ["purpose"] = "Encryption",
+                            ["status"] = "Active",
+                            ["algorithm"] = "AES-256-GCM",
+                            ["created_at"] = DateTimeOffset.UtcNow.ToString("O")
+                        }
+                    }
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
+            }
+
+            if (req.Method == HttpMethod.Post)
+            {
+                writtenJson = req.Content is not null ? await req.Content.ReadAsStringAsync() : null;
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var liveOptions = Options.Create(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = httpClient,
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        using var liveStore = new HashiCorpVaultKeyStore(liveOptions);
+        var liveId = KeyIdentifier.Prefixed("live-key");
+
+        // Update to Retired: json does not contain revoked_at
+        var liveRet = await liveStore.UpdateStatusAsync(liveId, version, KeyStatus.Retired);
+        liveRet.IsSuccess.Should().BeTrue();
+        writtenJson.Should().NotBeNull();
+        writtenJson.Should().Contain("\"status\":\"Retired\"");
+        writtenJson.Should().NotContain("\"revoked_at\"");
+
+        // Update to Revoked: json contains revoked_at
+        var liveRev = await liveStore.UpdateStatusAsync(liveId, version, KeyStatus.Revoked);
+        liveRev.IsSuccess.Should().BeTrue();
+        writtenJson.Should().Contain("\"status\":\"Revoked\"");
+        writtenJson.Should().Contain("\"revoked_at\"");
+    }
+
+    [Fact]
+    public void HashiCorpVault_StoresDispose_CleansUpProperly()
+    {
+        var options = Options.Create(new HashiCorpVaultOptions
+        {
+            VaultUrl = new Uri("http://127.0.0.1:8200/"),
+            Token = "s.token",
+            HttpClient = CreateMockHttpClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))),
+            EnableDevelopmentInMemoryStub = false
+        });
+
+        var keyStore = new HashiCorpVaultKeyStore(options);
+        var secretStore = new HashiCorpVaultSecretStore(options);
+
+        // Disposing live stores triggers _vaultClient?.Dispose()
+        keyStore.Dispose();
+        secretStore.Dispose();
+
+        // Stub stores disposal clears and zeroes memory
+        var stubOpts = Options.Create(new HashiCorpVaultOptions { EnableDevelopmentInMemoryStub = true });
+        var stubKeyStore = new HashiCorpVaultKeyStore(stubOpts);
+        var stubSecretStore = new HashiCorpVaultSecretStore(stubOpts);
+        stubKeyStore.Dispose();
+        stubSecretStore.Dispose();
+    }
 }

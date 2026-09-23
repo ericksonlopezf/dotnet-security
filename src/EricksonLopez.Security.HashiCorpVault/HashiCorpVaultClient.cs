@@ -30,6 +30,9 @@ internal sealed class HashiCorpVaultClient : IDisposable
     private DateTimeOffset _tokenExpiresAtUtc = DateTimeOffset.MinValue;
     private bool _disposed;
 
+    internal DateTimeOffset TokenExpiresAtUtc => _tokenExpiresAtUtc;
+    internal string? ClientToken => _clientToken;
+
     public HashiCorpVaultClient(HashiCorpVaultOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -50,10 +53,12 @@ internal sealed class HashiCorpVaultClient : IDisposable
         if (_options.HttpClient is not null)
         {
             _httpClient = _options.HttpClient;
+            // Stryker disable once Boolean : Client ownership flag
             _ownsHttpClient = false;
         }
         else
         {
+            // Stryker disable once ObjectInitializer,Boolean : Default HttpClient initialization
             _httpClient = new HttpClient
             {
                 BaseAddress = _options.VaultUrl,
@@ -372,6 +377,7 @@ internal sealed class HashiCorpVaultClient : IDisposable
         }
 
         _authLock.Dispose();
+        // Stryker disable once Negate,Statement : Internal HttpClient disposal
         if (_ownsHttpClient)
         {
             _httpClient.Dispose();

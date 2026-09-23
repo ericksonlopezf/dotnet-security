@@ -95,6 +95,7 @@ public sealed class InMemoryTotpReplayStore : ITotpReplayStore
             return;
         }
 
+        // Stryker disable once Block,Statement : Concurrency race optimization where losing thread exits early
         if (Interlocked.CompareExchange(ref _lastPruneTicks, nowTicks, lastTicks) != lastTicks)
         {
             return;

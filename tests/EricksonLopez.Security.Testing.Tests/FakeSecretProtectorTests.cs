@@ -77,4 +77,34 @@ public sealed class FakeSecretProtectorTests
         unprotectResult.IsSuccess.Should().BeTrue();
         unprotectResult.Value.Should().Equal(original);
     }
+
+    [Fact]
+    public async Task UnprotectToSecretBufferAsync_RoundtripsSuccessfully()
+    {
+        var protector = new FakeSecretProtector();
+        byte[] original = [10, 20, 30, 40, 50];
+
+        var protectResult = await protector.ProtectAsync(original);
+        protectResult.IsSuccess.Should().BeTrue();
+
+        var unprotectBufferResult = await protector.UnprotectToSecretBufferAsync(protectResult.Value);
+        unprotectBufferResult.IsSuccess.Should().BeTrue();
+        using var buffer = unprotectBufferResult.Value;
+        buffer.Length.Should().Be(original.Length);
+        buffer.Span.ToArray().Should().Equal(original);
+    }
+
+    [Fact]
+    public async Task UnprotectToSecretBufferAsync_WithInjectedError_ReturnsFailure()
+    {
+        var protector = new FakeSecretProtector
+        {
+            InjectedError = SecurityError.InvalidCiphertext("Simulated secret buffer unprotect failure")
+        };
+
+        byte[] data = [1, 2, 3];
+        var result = await protector.UnprotectToSecretBufferAsync(data);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Description.Should().Be("Simulated secret buffer unprotect failure");
+    }
 }

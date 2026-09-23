@@ -915,5 +915,31 @@ public sealed class XmlDigitalSignatureServiceTests : IClassFixture<XmlSigningCe
         act.Should().Throw<CryptographicException>()
             .WithMessage("*maximum permitted nesting depth*");
     }
+
+    [Fact]
+    public void VerifyXml_CertificateTrustEvaluator_ReturnsFalse_ReturnsUntrustedCertificateError()
+    {
+        var signResult = XmlDigitalSignatureService.Instance.SignXml("<Doc><Item>123</Item></Doc>", _cert);
+        var options = new XmlVerificationOptions
+        {
+            AllowUntrustedEmbeddedCertificate = false,
+            CertificateTrustEvaluator = _ => false
+        };
+        var verifyResult = XmlDigitalSignatureService.Instance.VerifyXml(signResult.Value, expectedCertificate: null, options: options);
+        verifyResult.IsFailure.Should().BeTrue();
+        verifyResult.Error.Code.Should().Be("XmlDigitalSignatureService.UntrustedCertificate");
+        verifyResult.Error.Description.Should().Be("The embedded certificate in KeyInfo failed custom trust policy validation.");
+    }
+
+    [Fact]
+    public void VerifyXml_NoExpectedCertificateAndNoKeyInfo_ReturnsCertificateNotFound()
+    {
+        var signResultNoKeyInfo = XmlDigitalSignatureService.Instance.SignXml("<Doc><Item>123</Item></Doc>", _cert, new XmlSigningOptions { IncludeKeyInfo = false });
+        var optionsNoCert = new XmlVerificationOptions { AllowUntrustedEmbeddedCertificate = false };
+        var verifyResultNoCert = XmlDigitalSignatureService.Instance.VerifyXml(signResultNoKeyInfo.Value, expectedCertificate: null, options: optionsNoCert);
+        verifyResultNoCert.IsFailure.Should().BeTrue();
+        verifyResultNoCert.Error.Code.Should().Be("XmlDigitalSignatureService.CertificateNotFound");
+        verifyResultNoCert.Error.Description.Should().Be("No expected certificate was provided and no valid certificate was found in KeyInfo.");
+    }
 }
 

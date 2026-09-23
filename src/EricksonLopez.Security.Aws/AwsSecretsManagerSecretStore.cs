@@ -77,6 +77,7 @@ public sealed class AwsSecretsManagerSecretStore : ISecretStore, IDisposable
             else
             {
                 var region = RegionEndpoint.GetBySystemName(_options.Region);
+                // Stryker disable once Conditional,Equality,Boolean : AWS SDK client construction with or without explicit credentials
                 _secretsManagerClient = _options.Credentials is not null
                     ? new AmazonSecretsManagerClient(_options.Credentials, region)
                     : new AmazonSecretsManagerClient(region);
@@ -189,6 +190,7 @@ public sealed class AwsSecretsManagerSecretStore : ISecretStore, IDisposable
     /// </summary>
     public void Dispose()
     {
+        // Stryker disable once Equality,Statement : Resource disposal for internally created AWS Secrets Manager client
         if (_ownsClient && _secretsManagerClient is not null)
         {
             _secretsManagerClient.Dispose();

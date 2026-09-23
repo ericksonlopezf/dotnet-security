@@ -117,6 +117,7 @@ public sealed class Fido2AttestationTestBuilder
         {
             using var rsa = RSA.Create(2048);
             var rsaParams = rsa.ExportParameters(false);
+            // Stryker disable once Block,Statement,String : Defensive runtime invariant - ExportParameters(false) never exports private exponent
             if (rsaParams.D is not null)
             {
                 throw new InvalidOperationException("RSA private exponent must not be exported.");
@@ -155,6 +156,7 @@ public sealed class Fido2AttestationTestBuilder
 
             using var ecdsa = ECDsa.Create(namedCurve);
             var ecParams = ecdsa.ExportParameters(false);
+            // Stryker disable once Block,Statement,String : Defensive runtime invariant - ExportParameters(false) never exports private key
             if (ecParams.D is not null)
             {
                 throw new InvalidOperationException("EC private key must not be exported.");
@@ -203,6 +205,7 @@ public sealed class Fido2AttestationTestBuilder
 
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ecdsa.ExportParameters(false);
+        // Stryker disable once Block,Statement,String : Defensive runtime invariant - ExportParameters(false) never exports private key
         if (ecParams.D is not null)
         {
             throw new InvalidOperationException("EC private key must not be exported.");
@@ -279,6 +282,7 @@ public sealed class Fido2AttestationTestBuilder
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecParams = ecdsa.ExportParameters(false);
+        // Stryker disable once Block,Statement,String : Defensive runtime invariant - ExportParameters(false) never exports private key
         if (ecParams.D is not null)
         {
             throw new InvalidOperationException("EC private key must not be exported.");

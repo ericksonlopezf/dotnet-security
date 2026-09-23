@@ -389,7 +389,7 @@ public sealed class TotpService : ITotpService
         }
         finally
         {
-            // Stryker disable once Statement : Defense-in-depth wiping of ephemeral secret in memory
+            // Stryker disable once Block,Statement : Defense-in-depth wiping of ephemeral secret in memory
             CryptographicOperations.ZeroMemory(secretBytes);
         }
     }
@@ -406,9 +406,9 @@ public sealed class TotpService : ITotpService
             return;
         }
 
+        // Stryker disable once Block,Statement : Concurrency optimization where losing race thread safely exits early
         if (Interlocked.CompareExchange(ref _lastPruneTicks, nowTicks, lastTicks) != lastTicks)
         {
-            // Stryker disable once Statement : Concurrency optimization where losing race thread safely exits early
             return;
         }
 

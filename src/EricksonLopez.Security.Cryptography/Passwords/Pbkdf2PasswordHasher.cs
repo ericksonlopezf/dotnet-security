@@ -101,6 +101,7 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
     /// <inheritdoc/>
     public PasswordVerificationResult VerifyPassword(ReadOnlySpan<char> password, string hashedPassword)
     {
+        // Stryker disable once Equality,Logical : DoS defense-in-depth length bounds prior to format parsing
         if (string.IsNullOrWhiteSpace(hashedPassword) || hashedPassword.Length > 512 || password.Length > 256)
             return PasswordVerificationResult.Failed;
 

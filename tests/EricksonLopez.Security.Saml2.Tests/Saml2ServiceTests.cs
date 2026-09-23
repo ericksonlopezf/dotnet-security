@@ -1468,6 +1468,46 @@ public sealed class Saml2ServiceTests : IClassFixture<SamlTestCertificatesFixtur
     }
 
     [Fact]
+    public void ValidateAssertionTimestamps_MalformedNotBefore_ReturnsFailure()
+    {
+        var xml = @"<saml:Assertion xmlns:saml=""urn:oasis:names:tc:SAML:2.0:assertion"">
+  <saml:Conditions NotBefore=""not-a-valid-date"" NotOnOrAfter=""2026-09-03T12:30:00Z""/>
+</saml:Assertion>";
+        var doc = new XmlDocument();
+        doc.LoadXml(xml);
+        var nsMgr = new XmlNamespaceManager(doc.NameTable);
+        nsMgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
+
+        var now = DateTimeOffset.Parse("2026-09-03T12:00:00Z");
+        var skew = TimeSpan.FromMinutes(2);
+
+        var result = Saml2Service.ValidateAssertionTimestamps(doc.DocumentElement!, nsMgr, now, skew);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.PolicyViolation");
+        result.Error.Description.Should().Be("Security policy 'SAML.Timestamp' violation: Assertion contains malformed Conditions/@NotBefore attribute.");
+    }
+
+    [Fact]
+    public void ValidateAssertionTimestamps_MalformedNotOnOrAfter_ReturnsFailure()
+    {
+        var xml = @"<saml:Assertion xmlns:saml=""urn:oasis:names:tc:SAML:2.0:assertion"">
+  <saml:Conditions NotBefore=""2026-09-03T11:00:00Z"" NotOnOrAfter=""not-a-valid-date""/>
+</saml:Assertion>";
+        var doc = new XmlDocument();
+        doc.LoadXml(xml);
+        var nsMgr = new XmlNamespaceManager(doc.NameTable);
+        nsMgr.AddNamespace("saml", "urn:oasis:names:tc:SAML:2.0:assertion");
+
+        var now = DateTimeOffset.Parse("2026-09-03T12:00:00Z");
+        var skew = TimeSpan.FromMinutes(2);
+
+        var result = Saml2Service.ValidateAssertionTimestamps(doc.DocumentElement!, nsMgr, now, skew);
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("Security.PolicyViolation");
+        result.Error.Description.Should().Be("Security policy 'SAML.Timestamp' violation: Assertion contains malformed Conditions/@NotOnOrAfter attribute.");
+    }
+
+    [Fact]
     public void ValidateAssertionTimestamps_NotOnOrAfterInPastBeyondSkew_ReturnsFailure()
     {
         var xml = @"<saml:Assertion xmlns:saml=""urn:oasis:names:tc:SAML:2.0:assertion"">

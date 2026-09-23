@@ -60,16 +60,18 @@ public sealed class AzureKeyVaultKeyStoreMetadataParserTests
     public void ParseMetadataFromProperties_AllTagsPresent_MapsPropertiesAccurately()
     {
         var props = SecretModelFactory.SecretProperties(name: "test-secret");
-        var now = DateTimeOffset.UtcNow;
+        var fixedCreated = new DateTimeOffset(2020, 5, 10, 12, 0, 0, TimeSpan.Zero);
+        var fixedExpires = new DateTimeOffset(2030, 5, 10, 12, 0, 0, TimeSpan.Zero);
+        var fixedRevoked = new DateTimeOffset(2021, 5, 10, 12, 0, 0, TimeSpan.Zero);
         props.Enabled = true;
         props.Tags["KeyId"] = "custom-key";
         props.Tags["Version"] = "42";
         props.Tags["Purpose"] = "Signing";
         props.Tags["Status"] = "Destroyed";
         props.Tags["AlgorithmId"] = "Ed25519";
-        props.Tags["CreatedAtUtc"] = now.ToString("O");
-        props.Tags["ExpiresAtUtc"] = now.AddDays(30).ToString("O");
-        props.Tags["RevokedAtUtc"] = now.AddDays(1).ToString("O");
+        props.Tags["CreatedAtUtc"] = fixedCreated.ToString("O");
+        props.Tags["ExpiresAtUtc"] = fixedExpires.ToString("O");
+        props.Tags["RevokedAtUtc"] = fixedRevoked.ToString("O");
 
         var meta = AzureKeyVaultKeyStore.ParseMetadataFromProperties(props, null, null);
 
@@ -78,9 +80,28 @@ public sealed class AzureKeyVaultKeyStoreMetadataParserTests
         meta.Purpose.Should().Be(KeyPurpose.Signing);
         meta.Status.Should().Be(KeyStatus.Destroyed);
         meta.AlgorithmId.Should().Be("Ed25519");
-        meta.CreatedAtUtc.Should().BeCloseTo(now, TimeSpan.FromSeconds(1));
-        meta.ExpiresAtUtc.Should().NotBeNull();
-        meta.RevokedAtUtc.Should().NotBeNull();
+        meta.CreatedAtUtc.Should().Be(fixedCreated);
+        meta.ExpiresAtUtc.Should().Be(fixedExpires);
+        meta.RevokedAtUtc.Should().Be(fixedRevoked);
+    }
+
+    [Fact]
+    public void ParseMetadataFromProperties_VersionBranches()
+    {
+        var props = SecretModelFactory.SecretProperties(name: "v1");
+        var fallbackVersion = new KeyVersion(99);
+        var meta = AzureKeyVaultKeyStore.ParseMetadataFromProperties(props, null, fallbackVersion);
+        meta.Version.Should().Be(fallbackVersion);
+
+        // Invalid version string uses fallback
+        var propsInvalid = SecretModelFactory.SecretProperties(name: "v2");
+        propsInvalid.Tags["Version"] = "not-an-int";
+        var metaInvalid = AzureKeyVaultKeyStore.ParseMetadataFromProperties(propsInvalid, null, fallbackVersion);
+        metaInvalid.Version.Should().Be(fallbackVersion);
+
+        // Without fallbackVersion -> KeyVersion.Initial
+        var metaInitial = AzureKeyVaultKeyStore.ParseMetadataFromProperties(props, null, null);
+        metaInitial.Version.Should().Be(KeyVersion.Initial);
     }
 
     [Fact]

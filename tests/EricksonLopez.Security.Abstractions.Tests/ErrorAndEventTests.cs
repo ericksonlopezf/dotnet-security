@@ -27,6 +27,18 @@ public sealed class ErrorAndEventTests
     }
 
     [Fact]
+    public void SecurityError_BufferTooSmall_ReturnsExpectedError()
+    {
+        var errDefault = SecurityError.BufferTooSmall();
+        Assert.Equal("Security.BufferTooSmall", errDefault.Code);
+        Assert.Equal("The destination buffer is too small to receive the output data.", errDefault.Description);
+
+        var errCustom = SecurityError.BufferTooSmall("Need at least 64 bytes.");
+        Assert.Equal("Security.BufferTooSmall", errCustom.Code);
+        Assert.Equal("Need at least 64 bytes.", errCustom.Description);
+    }
+
+    [Fact]
     public void SecurityError_AuthenticationTagMismatch_ReturnsExpectedError()
     {
         var errDefault = SecurityError.AuthenticationTagMismatch();

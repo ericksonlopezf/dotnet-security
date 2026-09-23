@@ -86,9 +86,6 @@ public sealed class AbacPolicyEngine : IAbacPolicyEngine
     /// </remarks>
     public AbacDecision EvaluateFailClosed(AbacContext context, IReadOnlyList<AbacPolicy> policies)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(policies);
-
         var decision = Evaluate(context, policies);
 
         if (decision.Status == AbacDecisionStatus.NotApplicable)

@@ -106,6 +106,87 @@ public sealed class TotpMutationTests
     }
 
     [Fact]
+    public void VerifyCode_AutomaticPruningThreshold_DoesNotTriggerWhenCountEqualsThreshold()
+    {
+        // Kills Mutant: (_consumedCodes.Count >= RoutinePruneThreshold)
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2050, 8, 30, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime);
+        var options = new TotpOptions
+        {
+            PeriodSeconds = 30,
+            AllowedDriftSteps = 0,
+            PreventReplay = true
+        };
+
+        // Populate 999 expired entries directly
+        var expiredTime = fakeTime.GetUtcNow().AddSeconds(-100);
+        for (int i = 0; i < 999; i++)
+        {
+            service.ConsumedCodes[$"expired-key-{i}"] = expiredTime;
+        }
+
+        fakeTime.Advance(TimeSpan.FromSeconds(2));
+
+        // When code #1000 is verified, Count becomes exactly 1000 == RoutinePruneThreshold (1000).
+        // Since 1000 > 1000 is FALSE, PruneExpiredCodes must NOT be triggered yet!
+        var code = service.ComputeCode(Secret, fakeTime.GetUtcNow(), options);
+        var verified = service.VerifyCode(Secret, code, fakeTime.GetUtcNow(), options);
+        verified.Should().BeTrue();
+
+        // Expired keys must still be present because count does not exceed 1000
+        service.ConsumedCodesCount.Should().Be(1000, "pruning must NOT trigger when count is exactly equal to threshold");
+    }
+
+    [Fact]
+    public void VerifyCode_PruningRateLimiting_BypassesThrottleWhenAtMaxCapacity()
+    {
+        // Kills Mutant: (_consumedCodes.Count <= MaxConsumedCodesCapacity) vs (<)
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2050, 8, 30, 12, 0, 0, TimeSpan.Zero));
+        var service = new TotpService(fakeTime)
+        {
+            MaxConsumedCodesCapacity = 10,
+            RoutinePruneThreshold = 5
+        };
+        var options = new TotpOptions
+        {
+            PeriodSeconds = 30,
+            AllowedDriftSteps = 0,
+            PreventReplay = true
+        };
+
+        var expiredTime = fakeTime.GetUtcNow().AddSeconds(-100);
+
+        // Step 1: establish _lastPruneTicks with initial prune
+        for (int i = 0; i < 6; i++)
+        {
+            service.ConsumedCodes[$"init-exp-{i}"] = expiredTime;
+        }
+        fakeTime.Advance(TimeSpan.FromSeconds(2));
+        var code1 = service.ComputeCode(Secret, fakeTime.GetUtcNow(), options);
+        service.VerifyCode(Secret, code1, fakeTime.GetUtcNow(), options).Should().BeTrue();
+        service.ConsumedCodesCount.Should().Be(1);
+
+        // Step 2: add 8 expired entries so count is 9. Next addition reaches 10 == MaxConsumedCodesCapacity
+        for (int i = 0; i < 8; i++)
+        {
+            service.ConsumedCodes[$"exp-at-cap-{i}"] = expiredTime;
+        }
+        service.ConsumedCodesCount.Should().Be(9);
+
+        // Advance by only 100ms (< 1s throttle)
+        fakeTime.Advance(TimeSpan.FromMilliseconds(100));
+
+        const string distinctSecret = "HXDMVJECJJWSRB3H";
+        var code2 = service.ComputeCode(distinctSecret, fakeTime.GetUtcNow(), options);
+        // Adding 10th code reaches exactly MaxConsumedCodesCapacity (10).
+        // Since Count < Max (10 < 10) is FALSE, throttle is bypassed and pruning runs!
+        service.VerifyCode(distinctSecret, code2, fakeTime.GetUtcNow(), options).Should().BeTrue();
+
+        // Expired items pruned! Only the 2 active codes remain
+        service.ConsumedCodesCount.Should().Be(2, "throttle must be bypassed when count equals MaxConsumedCodesCapacity");
+    }
+
+    [Fact]
     public void VerifyCode_PruningRateLimiting_ThrottlesUnderOneSecondUnlessMaxCapacity()
     {
         // Kills Mutants:

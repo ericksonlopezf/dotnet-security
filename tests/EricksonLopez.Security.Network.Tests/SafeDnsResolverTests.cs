@@ -163,6 +163,16 @@ public sealed class SafeDnsResolverTests
         var result = await emptyResolver.ResolveAndValidateAsync("empty-dns.example.com");
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("SafeDnsResolver.NoAddressesResolved");
+        result.Error.Description.Should().Be("DNS resolution for host 'empty-dns.example.com' returned no IP addresses.");
+
+        // Allowlisted host returning no IP addresses (covers line 107)
+        var options = new SafeDnsResolverOptions();
+        options.AllowedHostnames.Add("allowlisted.example.com");
+        var allowlistedResolver = new SafeDnsResolver(options, (h, ct) => Task.FromResult(Array.Empty<IPAddress>()));
+        var allowResult = await allowlistedResolver.ResolveAndValidateAsync("allowlisted.example.com");
+        allowResult.IsFailure.Should().BeTrue();
+        allowResult.Error.Code.Should().Be("SafeDnsResolver.NoAddressesResolved");
+        allowResult.Error.Description.Should().Be("No IP addresses resolved for allowlisted host 'allowlisted.example.com'.");
     }
 
     [Fact]
