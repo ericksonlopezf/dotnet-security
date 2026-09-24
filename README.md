@@ -5,7 +5,7 @@ Enterprise-grade security ecosystem for modern .NET (8/9/10). Native AOT-first A
 [![CI](https://img.shields.io/github/actions/workflow/status/ericksonlopezf/dotnet-security/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/ericksonlopezf/dotnet-security/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/ericksonlopezf/dotnet-security?style=for-the-badge&logo=codecov&logoColor=white)](https://codecov.io/gh/ericksonlopezf/dotnet-security)
 [![Quality Gate](https://img.shields.io/sonar/quality_gate/ericksonlopezf_dotnet-security?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarcloud&logoColor=white)](https://sonarcloud.io/summary/new_code?id=ericksonlopezf_dotnet-security)
-[![Mutation Score](https://img.shields.io/badge/Mutation_Score-%E2%89%A595%25-brightgreen?style=for-the-badge&logo=stryker&logoColor=white)](https://github.com/ericksonlopezf/dotnet-security/blob/main/docs/testing.md)
+[![Mutation Score](https://img.shields.io/badge/Mutation_Score-100%25-brightgreen?style=for-the-badge&logo=stryker&logoColor=white)](https://github.com/ericksonlopezf/dotnet-security/blob/main/docs/testing.md)
 [![NuGet](https://img.shields.io/nuget/v/EricksonLopez.Security?style=for-the-badge&logo=nuget&logoColor=white&color=512BD4)](https://www.nuget.org/packages/EricksonLopez.Security)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/EricksonLopez.Security?style=for-the-badge&logo=nuget&logoColor=white&color=004880)](https://www.nuget.org/packages/EricksonLopez.Security)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://github.com/ericksonlopezf/dotnet-security/blob/main/LICENSE)
