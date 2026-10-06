@@ -27,7 +27,7 @@
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Security.KeyVault.Keys" Version="4.10.1" />
     <PackageVersion Include="Azure.Security.KeyVault.Secrets" Version="4.11.1" />
-    <PackageVersion Include="AWSSDK.KeyManagementService" Version="4.0.100.14" />
+    <PackageVersion Include="AWSSDK.KeyManagementService" Version="4.0.100.15" />
     <PackageVersion Include="AWSSDK.SecretsManager" Version="4.0.100.14" />
     <PackageVersion Include="Google.Cloud.Kms.V1" Version="3.27.0" />
     <PackageVersion Include="Google.Cloud.SecretManager.V1" Version="2.8.0" />
