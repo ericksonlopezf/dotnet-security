@@ -1,65 +1,65 @@
 ```
 
 BenchmarkDotNet v0.15.8, Linux Ubuntu 24.04.5 LTS (Noble Numbat)
-AMD EPYC 7763 2.45GHz, 1 CPU, 4 logical and 2 physical cores
+AMD EPYC 9V45 2.60GHz, 1 CPU, 4 logical and 2 physical cores
 .NET SDK 10.0.401
-  [Host]    : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v3
-  .NET 10.0 : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v3
-  .NET 8.0  : .NET 8.0.31 (8.0.31, 8.0.3126.42015), X64 RyuJIT x86-64-v3
-  .NET 9.0  : .NET 9.0.20 (9.0.20, 9.0.2026.41315), X64 RyuJIT x86-64-v3
+  [Host]    : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v4
+  .NET 10.0 : .NET 10.0.12 (10.0.12, 10.0.1226.42308), X64 RyuJIT x86-64-v4
+  .NET 8.0  : .NET 8.0.31 (8.0.31, 8.0.3126.42015), X64 RyuJIT x86-64-v4
+  .NET 9.0  : .NET 9.0.20 (9.0.20, 9.0.2026.41315), X64 RyuJIT x86-64-v4
 
 
 ```
-| Method                                                       | Job       | Runtime   | Mean              | Error          | StdDev         | Ratio | Gen0   | Allocated | Alloc Ratio |
-|------------------------------------------------------------- |---------- |---------- |------------------:|---------------:|---------------:|------:|-------:|----------:|------------:|
-| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 10.0 | .NET 10.0 |       3,560.21 ns |      11.837 ns |      11.073 ns |  0.91 | 0.0038 |      64 B |        1.00 |
-| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 8.0  | .NET 8.0  |       3,891.72 ns |       2.596 ns |       2.168 ns |  1.00 |      - |      64 B |        1.00 |
-| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 9.0  | .NET 9.0  |       3,908.26 ns |      12.231 ns |      10.843 ns |  1.00 |      - |      64 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 10.0 | .NET 10.0 |       2,233.85 ns |       4.476 ns |       3.968 ns |  0.98 |      - |      32 B |        0.50 |
-| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 8.0  | .NET 8.0  |       2,289.99 ns |       4.069 ns |       3.607 ns |  1.00 | 0.0038 |      64 B |        1.00 |
-| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 9.0  | .NET 9.0  |       2,570.01 ns |       3.384 ns |       2.999 ns |  1.12 | 0.0038 |      64 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 10.0 | .NET 10.0 |     193,646.22 ns |   1,976.089 ns |   1,751.752 ns |  0.99 | 0.4883 |    8630 B |        1.00 |
-| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 8.0  | .NET 8.0  |     195,818.63 ns |   1,043.527 ns |     871.392 ns |  1.00 | 0.4883 |    8629 B |        1.00 |
-| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 9.0  | .NET 9.0  |     195,895.83 ns |   1,657.568 ns |   1,469.391 ns |  1.00 | 0.4883 |    8626 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 10.0 | .NET 10.0 |   6,734,630.11 ns |  11,018.713 ns |   9,201.124 ns |  0.99 |      - |     464 B |        0.92 |
-| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 8.0  | .NET 8.0  |   6,784,156.46 ns |  13,645.499 ns |  12,096.379 ns |  1.00 |      - |     504 B |        1.00 |
-| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 9.0  | .NET 9.0  |   6,793,666.81 ns |  10,783.343 ns |  10,086.745 ns |  1.00 |      - |     464 B |        0.92 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 10.0 | .NET 10.0 | 405,122,262.43 ns | 741,738.129 ns | 657,531.532 ns |  1.00 |      - |     504 B |        1.00 |
-| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 8.0  | .NET 8.0  | 405,820,266.62 ns | 691,280.117 ns | 577,250.206 ns |  1.00 |      - |     504 B |        1.00 |
-| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 9.0  | .NET 9.0  | 405,294,660.80 ns | 516,188.232 ns | 482,842.793 ns |  1.00 |      - |     504 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 10.0 | .NET 10.0 |  47,127,059.98 ns | 130,072.497 ns | 108,616.426 ns |  1.00 |      - |     416 B |        0.91 |
-| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 8.0  | .NET 8.0  |  47,027,026.94 ns |  56,050.338 ns |  46,804.571 ns |  1.00 |      - |     456 B |        1.00 |
-| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 9.0  | .NET 9.0  |  47,359,988.79 ns |  36,542.585 ns |  32,394.050 ns |  1.01 |      - |     416 B |        0.91 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 10.0 | .NET 10.0 |   6,737,228.51 ns |  18,217.343 ns |  14,222.903 ns |  0.99 |      - |     464 B |        1.00 |
-| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 8.0  | .NET 8.0  |   6,782,333.12 ns |   6,422.052 ns |   5,362.704 ns |  1.00 |      - |     464 B |        1.00 |
-| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 9.0  | .NET 9.0  |   6,842,881.23 ns |  91,876.563 ns |  85,941.394 ns |  1.01 |      - |     464 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 10.0 | .NET 10.0 |          38.68 ns |       0.078 ns |       0.069 ns |  1.02 |      - |         - |          NA |
-| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 8.0  | .NET 8.0  |          37.93 ns |       0.034 ns |       0.030 ns |  1.00 |      - |         - |          NA |
-| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 9.0  | .NET 9.0  |          37.93 ns |       0.035 ns |       0.033 ns |  1.00 |      - |         - |          NA |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 10.0 | .NET 10.0 |          97.84 ns |       0.346 ns |       0.307 ns |  0.90 | 0.0281 |     472 B |        1.00 |
-| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 8.0  | .NET 8.0  |         109.14 ns |       0.763 ns |       0.714 ns |  1.00 | 0.0281 |     472 B |        1.00 |
-| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 9.0  | .NET 9.0  |         101.77 ns |       0.627 ns |       0.586 ns |  0.93 | 0.0281 |     472 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 10.0 | .NET 10.0 |         131.13 ns |       0.064 ns |       0.050 ns |  1.00 |      - |         - |          NA |
-| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 8.0  | .NET 8.0  |         131.76 ns |       0.101 ns |       0.085 ns |  1.00 |      - |         - |          NA |
-| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 9.0  | .NET 9.0  |         132.19 ns |       0.144 ns |       0.121 ns |  1.00 |      - |         - |          NA |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 10.0 | .NET 10.0 |       1,267.40 ns |       1.204 ns |       0.940 ns |  0.93 | 0.0229 |     388 B |        1.00 |
-| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 8.0  | .NET 8.0  |       1,356.06 ns |       5.298 ns |       4.696 ns |  1.00 | 0.0229 |     388 B |        1.00 |
-| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 9.0  | .NET 9.0  |       1,411.66 ns |       3.609 ns |       3.199 ns |  1.04 | 0.0229 |     389 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;Token Hash (SHA-256)&#39;                                       | .NET 10.0 | .NET 10.0 |         627.06 ns |       1.829 ns |       1.621 ns |  0.61 | 0.0105 |     184 B |        1.00 |
-| &#39;Token Hash (SHA-256)&#39;                                       | .NET 8.0  | .NET 8.0  |       1,019.70 ns |       1.725 ns |       1.529 ns |  1.00 | 0.0095 |     184 B |        1.00 |
-| &#39;Token Hash (SHA-256)&#39;                                       | .NET 9.0  | .NET 9.0  |       1,036.51 ns |       2.448 ns |       2.170 ns |  1.02 | 0.0095 |     184 B |        1.00 |
-|                                                              |           |           |                   |                |                |       |        |           |             |
-| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 10.0 | .NET 10.0 |          71.30 ns |       0.158 ns |       0.123 ns |  0.84 | 0.0019 |      32 B |        1.00 |
-| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 8.0  | .NET 8.0  |          84.98 ns |       0.129 ns |       0.115 ns |  1.00 | 0.0019 |      32 B |        1.00 |
-| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 9.0  | .NET 9.0  |          69.66 ns |       0.199 ns |       0.176 ns |  0.82 | 0.0019 |      32 B |        1.00 |
+| Method                                                       | Job       | Runtime   | Mean              | Error            | StdDev           | Ratio | RatioSD | Gen0   | Allocated | Alloc Ratio |
+|------------------------------------------------------------- |---------- |---------- |------------------:|-----------------:|-----------------:|------:|--------:|-------:|----------:|------------:|
+| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 10.0 | .NET 10.0 |       2,213.03 ns |        21.949 ns |        19.457 ns |  0.98 |    0.03 | 0.0038 |      64 B |        1.00 |
+| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 8.0  | .NET 8.0  |       2,251.09 ns |        44.371 ns |        66.412 ns |  1.00 |    0.04 | 0.0038 |      64 B |        1.00 |
+| &#39;AES-GCM 256-bit Encrypt (Span, Zero-Alloc)&#39;                 | .NET 9.0  | .NET 9.0  |       2,183.73 ns |        33.677 ns |        31.502 ns |  0.97 |    0.03 | 0.0038 |      64 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 10.0 | .NET 10.0 |       1,346.86 ns |        15.568 ns |        14.562 ns |  1.02 |    0.02 | 0.0019 |      32 B |        0.50 |
+| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 8.0  | .NET 8.0  |       1,321.92 ns |        26.069 ns |        27.894 ns |  1.00 |    0.03 | 0.0038 |      64 B |        1.00 |
+| &#39;AES-GCM 256-bit Decrypt (Span, Zero-Alloc)&#39;                 | .NET 9.0  | .NET 9.0  |       1,319.28 ns |        26.111 ns |        24.424 ns |  1.00 |    0.03 | 0.0038 |      64 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 10.0 | .NET 10.0 |     106,482.42 ns |     1,082.962 ns |     1,013.003 ns |  1.00 |    0.01 | 0.4883 |    8624 B |        1.00 |
+| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 8.0  | .NET 8.0  |     106,624.51 ns |       785.267 ns |       655.733 ns |  1.00 |    0.01 | 0.4883 |    8622 B |        1.00 |
+| &#39;AES-GCM Parallel Concurrent Throughput (100 ops)&#39;           | .NET 9.0  | .NET 9.0  |     105,963.89 ns |       742.205 ns |       694.259 ns |  0.99 |    0.01 | 0.4883 |    8618 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 10.0 | .NET 10.0 |   3,643,927.28 ns |    26,842.439 ns |    25,108.434 ns |  0.99 |    0.01 |      - |     464 B |        0.92 |
+| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 8.0  | .NET 8.0  |   3,671,781.57 ns |    23,300.106 ns |    21,794.933 ns |  1.00 |    0.01 |      - |     504 B |        1.00 |
+| &#39;PBKDF2-SHA512 Password Hash (10k iters)&#39;                    | .NET 9.0  | .NET 9.0  |   3,563,158.45 ns |    70,048.973 ns |    68,797.458 ns |  0.97 |    0.02 |      - |     464 B |        0.92 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 10.0 | .NET 10.0 | 217,699,155.86 ns | 2,940,171.687 ns | 2,606,385.619 ns |  1.00 |    0.01 |      - |     464 B |        0.92 |
+| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 8.0  | .NET 8.0  | 216,751,158.86 ns | 1,391,004.212 ns | 1,233,089.003 ns |  1.00 |    0.01 |      - |     504 B |        1.00 |
+| &#39;PBKDF2-SHA512 Password Hash (600K iters — PRODUCTION COST)&#39; | .NET 9.0  | .NET 9.0  | 216,144,475.10 ns | 1,288,506.859 ns | 1,142,227.769 ns |  1.00 |    0.01 |      - |     464 B |        0.92 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 10.0 | .NET 10.0 |  25,351,611.77 ns |   118,745.680 ns |    99,158.021 ns |  0.99 |    0.01 |      - |     416 B |        0.91 |
+| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 8.0  | .NET 8.0  |  25,694,854.72 ns |   261,481.337 ns |   231,796.395 ns |  1.00 |    0.01 |      - |     456 B |        1.00 |
+| &#39;LegacyPbkdf2 Password Hash (Fast Config)&#39;                   | .NET 9.0  | .NET 9.0  |  25,215,092.65 ns |   121,080.882 ns |    94,531.988 ns |  0.98 |    0.01 |      - |     416 B |        0.91 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 10.0 | .NET 10.0 |   3,695,835.14 ns |    16,541.103 ns |    14,663.257 ns |  1.03 |    0.03 |      - |     464 B |        1.00 |
+| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 8.0  | .NET 8.0  |   3,594,348.50 ns |    70,218.606 ns |    88,804.061 ns |  1.00 |    0.03 |      - |     464 B |        1.00 |
+| &#39;CompositePasswordHasher Verify &amp; Rehash Check&#39;              | .NET 9.0  | .NET 9.0  |   3,612,204.99 ns |    23,253.803 ns |    21,751.622 ns |  1.01 |    0.03 |      - |     464 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 10.0 | .NET 10.0 |          18.70 ns |         0.063 ns |         0.049 ns |  0.86 |    0.01 |      - |         - |          NA |
+| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 8.0  | .NET 8.0  |          21.63 ns |         0.136 ns |         0.120 ns |  1.00 |    0.01 |      - |         - |          NA |
+| &#39;SecurityEnvelope Serialize (Span, Zero-Alloc)&#39;              | .NET 9.0  | .NET 9.0  |          21.74 ns |         0.167 ns |         0.140 ns |  1.01 |    0.01 |      - |         - |          NA |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 10.0 | .NET 10.0 |          49.92 ns |         1.002 ns |         1.114 ns |  0.74 |    0.02 | 0.0282 |     472 B |        1.00 |
+| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 8.0  | .NET 8.0  |          67.63 ns |         1.358 ns |         1.667 ns |  1.00 |    0.03 | 0.0281 |     472 B |        1.00 |
+| &#39;SecurityEnvelope Deserialize (Span)&#39;                        | .NET 9.0  | .NET 9.0  |          59.97 ns |         1.169 ns |         1.036 ns |  0.89 |    0.03 | 0.0282 |     472 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 10.0 | .NET 10.0 |         102.39 ns |         2.059 ns |         3.082 ns |  1.11 |    0.04 |      - |         - |          NA |
+| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 8.0  | .NET 8.0  |          92.05 ns |         1.313 ns |         1.164 ns |  1.00 |    0.02 |      - |         - |          NA |
+| &#39;ConstantTime FixedTimeEquals (32 bytes)&#39;                    | .NET 9.0  | .NET 9.0  |          91.29 ns |         0.474 ns |         0.443 ns |  0.99 |    0.01 |      - |         - |          NA |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 10.0 | .NET 10.0 |         792.40 ns |        15.683 ns |        13.903 ns |  0.94 |    0.02 | 0.0229 |     388 B |        1.00 |
+| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 8.0  | .NET 8.0  |         840.65 ns |        14.586 ns |        13.644 ns |  1.00 |    0.02 | 0.0229 |     388 B |        1.00 |
+| &#39;Token Generation (URL-Safe 32 bytes)&#39;                       | .NET 9.0  | .NET 9.0  |         829.13 ns |        15.515 ns |        16.600 ns |  0.99 |    0.02 | 0.0229 |     388 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;Token Hash (SHA-256)&#39;                                       | .NET 10.0 | .NET 10.0 |         349.97 ns |         6.329 ns |         5.921 ns |  0.67 |    0.02 | 0.0110 |     184 B |        1.00 |
+| &#39;Token Hash (SHA-256)&#39;                                       | .NET 8.0  | .NET 8.0  |         523.50 ns |         9.057 ns |         8.472 ns |  1.00 |    0.02 | 0.0105 |     184 B |        1.00 |
+| &#39;Token Hash (SHA-256)&#39;                                       | .NET 9.0  | .NET 9.0  |         520.37 ns |         5.698 ns |         5.330 ns |  0.99 |    0.02 | 0.0105 |     184 B |        1.00 |
+|                                                              |           |           |                   |                  |                  |       |         |        |           |             |
+| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 10.0 | .NET 10.0 |          49.02 ns |         0.480 ns |         0.426 ns |  0.91 |    0.01 | 0.0019 |      32 B |        1.00 |
+| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 8.0  | .NET 8.0  |          53.67 ns |         0.368 ns |         0.307 ns |  1.00 |    0.01 | 0.0019 |      32 B |        1.00 |
+| &#39;SecretBuffer Allocate &amp; Dispose (ZeroMemory)&#39;               | .NET 9.0  | .NET 9.0  |          48.75 ns |         0.410 ns |         0.363 ns |  0.91 |    0.01 | 0.0019 |      32 B |        1.00 |
